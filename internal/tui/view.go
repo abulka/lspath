@@ -236,22 +236,60 @@ func (m AppModel) View() string {
 			// "  .zshrc"
 			// The user wants to understand duplication.
 			// If I see:
-			// .zshrc
-			//   nvm.sh
-			// .zshrc
 			// It visually implies return.
 
-			// indent = strings.Repeat("  ", node.Depth) // This line is redundant as indent is already calculated above
+			// indent = strings.Repeat("  ", node.Depth) // This line is redundant as indent is already calculated
+			// Annotations
+			note := ""
+			if strings.HasSuffix(node.FilePath, "/etc/zshenv") {
+				note = " (System-wide, always run)"
+			}
+			if strings.HasSuffix(node.FilePath, "/.zshenv") {
+				note = " (Personal Env)"
+			}
+			if strings.HasSuffix(node.FilePath, "/etc/zprofile") {
+				note = " (System Profile)"
+			}
+			if strings.HasSuffix(node.FilePath, "/.zprofile") {
+				note = " (Personal Profile)"
+			}
+			if strings.HasSuffix(node.FilePath, "/etc/zshrc") {
+				note = " (System RC)"
+			}
+			if strings.HasSuffix(node.FilePath, "/.zshrc") {
+				note = " (Personal RC)"
+			}
+			if strings.HasSuffix(node.FilePath, "/.zlogin") {
+				note = " (Personal Login)"
+			}
+			if strings.HasSuffix(node.FilePath, "/etc/zshrc_Apple_Terminal") {
+				note = " (Apple Terminal)"
+			}
+			if strings.Contains(node.FilePath, "cargo/env") {
+				note = " (Rust Cargo)"
+			}
+			if strings.Contains(node.FilePath, "nvm.sh") {
+				note = " (Node Version Manager)"
+			}
 
 			suffix := ""
 			if isContinuation[node.Order] {
 				// We can keep this or remove it. "cont" is still helpful text.
 				suffix = " (cont.)"
 			}
+
+			// Empty Indicator
+			// If node has 0 entries, mark it.
+			if len(node.Entries) == 0 {
+				suffix += " [No Change]"
+			}
+
+			// Combine
+			// Format: "1.   .zshrc (User rc) [No Change]"
 			// Actually, if indented back out, it's obvious.
 			// But let's keep suffix for now as "extra" clarity.
 
-			line := fmt.Sprintf("%d. %s%s%s", node.Order, indent, name, suffix)
+			line := fmt.Sprintf("%d. %s%s%s%s", node.Order, indent, name, suffix, note)
 			// Truncate width
 			if len(line) > rightWidth-2 {
 				line = line[:rightWidth-2] + "…"

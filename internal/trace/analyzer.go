@@ -34,8 +34,17 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 	// If we reuse, we should reuse the *first* matching instance?
 	// Or simpler: Map Value -> Entry. But duplicates confuse map.
 
-	// Better: Maintain current list of `[]*model.PathEntry`.
+	// Maintain current list of `[]*model.PathEntry`.
 	var currentEntries []*model.PathEntry
+
+	// Maintain a call stack to infer depth manually since zsh trace depth is unreliable for sourcing.
+	// Stack contains file paths.
+	fileStack := []string{}
+
+	// Helper to calculate depth from stack
+	getStackDepth := func() int {
+		return len(fileStack) - 1
+	}
 
 	nodeCounter := 0
 
@@ -59,13 +68,47 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 				// We should map this event to the *current* flow node.
 				// So we do nothing.
 			} else {
-				// Stack Logic: Use the explicit depth form trace (truth)
-				// Adjust depth: The user sees + as 1, ++ as 2.
-				// We want 0-based indentation for Top Level.
-				// Assuming standard zsh -x, the first level is usually 1 (+)
-				// But we might be in a subshell or sourced file.
+				// Maintain a call stack to infer depth manually since zsh trace depth is unreliable for sourcing.
+				// Stack Management
+				// Did we go deeper?
 
-				depth := ev.Depth - 1
+				// Find in stack
+				stackIdx := -1
+				for i := len(fileStack) - 1; i >= 0; i-- {
+					if fileStack[i] == ev.File {
+						stackIdx = i
+						break
+					}
+				}
+
+				if stackIdx != -1 {
+					// Returning to a parent file
+					fileStack = fileStack[:stackIdx+1]
+				} else {
+					// New file - assume nesting?
+					// Unless it's a top level sibling switch.
+
+					isTopLevel := isImportantConfig(ev.File) && !strings.Contains(ev.File, "cargo") && !strings.Contains(ev.File, "nvm")
+
+					if isTopLevel {
+						// Force reset for known top-level sequence (zprofile, zshrc, etc)
+						// They are triggered by the shell, not sourced by each other usually (except /etc/... -> ~/. ...)
+						// Actually, /etc/zprofile might source ~/.zprofile? NO, usually zsh runs them sequentially.
+						// BUT, /etc/zshrc sources ~/.zshrc? No, sequential.
+
+						// If it is a System file (/etc/...), it's definitely a new start.
+						// If it is a User file (~/...), it might be sourced by System file?
+						// Darwin zshrc (/etc/zshrc) sources /etc/zshrc_Apple_Terminal usually.
+
+						// Safer heuristic: If isTopLevel, reset stack to just this file.
+						fileStack = []string{ev.File}
+					} else {
+						// Deeper
+						fileStack = append(fileStack, ev.File)
+					}
+				}
+
+				depth := getStackDepth()
 				if depth < 0 {
 					depth = 0
 				}
@@ -180,8 +223,13 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 	// Filter and Merge
 	var cleanNodes []model.ConfigNode
 	for _, node := range flowNodes {
-		// Filter empty nodes
-		if len(node.Entries) == 0 {
+		// Filter empty nodes - UNLESS it's an important config file.
+		// User wants to see .zshenv, .zprofile, etc even if they don't change PATH.
+		// We still want to filters out "noisy" internal files if empty.
+
+		isImportant := isImportantConfig(node.FilePath)
+
+		if len(node.Entries) == 0 && !isImportant {
 			continue
 		}
 
@@ -231,4 +279,29 @@ func GuessShellMode(filename string) string {
 		return "Env/All"
 	}
 	return "Unknown"
+}
+
+// isImportantConfig checks if a file is a standard shell configuration file
+// that should be shown in the flow even if empty.
+func isImportantConfig(path string) bool {
+	// Check standard zsh/bash files
+	// Use Contains or Suffix to handle absolute paths
+	keys := []string{
+		"zshenv", ".zshenv",
+		"zprofile", ".zprofile",
+		"zshrc", ".zshrc",
+		"zlogin", ".zlogin",
+		"zlogout", ".zlogout",
+		"bash_profile", ".bash_profile",
+		"bashrc", ".bashrc",
+		"profile", ".profile",
+		"bash_login",
+	}
+
+	for _, k := range keys {
+		if strings.HasSuffix(path, "/"+k) || path == k {
+			return true
+		}
+	}
+	return false
 }
