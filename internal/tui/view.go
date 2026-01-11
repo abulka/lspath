@@ -248,7 +248,7 @@ func (m AppModel) View() string {
 			}
 
 			if strings.HasSuffix(checkPath, "/etc/zshenv") {
-				note = " (system-wide, always run)"
+				note = " (system-wide env)"
 			}
 			if strings.HasSuffix(checkPath, "/.zshenv") || checkPath == "~/.zshenv" {
 				note = " (your personal env file)"
@@ -285,29 +285,48 @@ func (m AppModel) View() string {
 				note = " (Node Version Manager)"
 			}
 
-			suffix := ""
+			contStr := ""
 			if isContinuation[node.Order] {
-				suffix = " (cont.)"
+				contStr = " (cont.)"
 			}
 
-			// Empty / Not Executed Indicator
+			// Status Indicator [..]
+			statusStr := ""
+
+			// Calculate nested paths
+			// Look ahead for children (depth > node.Depth)
+			nestedCount := 0
+			for j := i + 1; j < len(m.TraceResult.FlowNodes); j++ {
+				sub := m.TraceResult.FlowNodes[j]
+				if sub.Depth <= node.Depth {
+					break // End of children
+				}
+				nestedCount += len(sub.Entries)
+			}
+
+			ownCount := len(node.Entries)
+			totalCount := ownCount + nestedCount
+
 			if node.NotExecuted {
-				// Gray out or special mark?
-				// User asked for [no paths] or [empty]
-				// And specifically "list them all... even if they don't contribute"
-				// "They will only appear if the shell actually executes them" was rejected.
-				// So we distinguish "Ran, no change" vs "Didn't run".
-				suffix += " [Not Executed]"
-			} else if len(node.Entries) == 0 {
-				suffix += " [No Change]"
+				statusStr = " [Not Executed]"
+			} else if totalCount == 0 {
+				statusStr = " [No Change]"
+			} else {
+				if ownCount > 0 && nestedCount > 0 {
+					statusStr = fmt.Sprintf(" [%d paths (+%d nested)]", ownCount, nestedCount)
+				} else if ownCount == 0 && nestedCount > 0 {
+					statusStr = fmt.Sprintf(" [Sources %d paths]", nestedCount)
+				} else {
+					if ownCount == 1 {
+						statusStr = " [1 path]"
+					} else {
+						statusStr = fmt.Sprintf(" [%d paths]", ownCount)
+					}
+				}
 			}
 
-			// Combine
-			// Format: "1.   .zshrc (User rc) [No Change]"
-			// Actually, if indented back out, it's obvious.
-			// But let's keep suffix for now as "extra" clarity.
-
-			line := fmt.Sprintf("%d. %s%s%s%s", node.Order, indent, name, suffix, note)
+			// Combine: Order. Indent Name (cont) (Description) [Status]
+			line := fmt.Sprintf("%d. %s%s%s%s%s", node.Order, indent, name, contStr, note, statusStr)
 
 			// If NotExecuted, maybe dim it even more?
 			styleToUse := normalStyle
