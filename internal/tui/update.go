@@ -99,12 +99,21 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ShowFlow = false
 		case "f":
 			m.ShowFlow = !m.ShowFlow
+			m.CumulativeFlow = false // Reset cumulative on toggle? Or persist?
+			// Reset to Specific mode when entering normally.
 			m.ShowDiagnostics = false
 			// Reset flow cursor if opening first time?
-			// Better to keep memory if re-toggling.
-			// Ensure bounds though?
 			if len(m.TraceResult.FlowNodes) > 0 && m.FlowSelectedIdx >= len(m.TraceResult.FlowNodes) {
 				m.FlowSelectedIdx = 0
+			}
+		case "F":
+			// Toggle Cumulative Mode
+			m.CumulativeFlow = !m.CumulativeFlow
+			if m.CumulativeFlow {
+				m.ShowFlow = true
+				m.ShowDiagnostics = false
+			} else {
+				// If turning off cumulative, stay in flow mode?
 			}
 		case "w":
 			m.InputMode = true

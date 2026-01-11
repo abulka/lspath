@@ -37,9 +37,6 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 	// Better: Maintain current list of `[]*model.PathEntry`.
 	var currentEntries []*model.PathEntry
 
-	// Stack tracking for indentation
-	var fileStack []string
-
 	nodeCounter := 0
 
 	for _, ev := range events {
@@ -60,34 +57,15 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 				// We just effectively "ignore" this switch.
 				// But wait, if we ignore the switch, ev.File is different.
 				// We should map this event to the *current* flow node.
-				// So we do nothing here.
+				// So we do nothing.
 			} else {
-				// Stack Logic:
-				// If new file is in current stack, it means we returned to it (Pop).
-				// If not, we are sourcing a new file (Push).
+				// Stack Logic: Use the explicit depth form trace (truth)
+				// Adjust depth: The user sees + as 1, ++ as 2.
+				// We want 0-based indentation for Top Level.
+				// Assuming standard zsh -x, the first level is usually 1 (+)
+				// But we might be in a subshell or sourced file.
 
-				// Initialize stack if empty (first node)
-				// Actually `lastFile` was the top of stack.
-
-				// Find ev.File in stack
-				foundIdx := -1
-				for i := len(fileStack) - 1; i >= 0; i-- {
-					if fileStack[i] == ev.File {
-						foundIdx = i
-						break
-					}
-				}
-
-				if foundIdx != -1 {
-					// Returned to previous file -> Pop stack down to this file
-					fileStack = fileStack[:foundIdx+1]
-				} else {
-					// New file -> Push
-					fileStack = append(fileStack, ev.File)
-				}
-
-				// Current depth is len(stack) - 1
-				depth := len(fileStack) - 1
+				depth := ev.Depth - 1
 				if depth < 0 {
 					depth = 0
 				}

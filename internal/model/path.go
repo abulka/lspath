@@ -20,6 +20,7 @@ type TraceEvent struct {
 	Directory  string // Directory context of execution
 	File       string // Source file
 	Line       int    // Line number
+	Depth      int    // Trace indentation depth
 	RawCommand string // The command being executed
 	PathChange string // If this event modified PATH, what was the new value?
 }

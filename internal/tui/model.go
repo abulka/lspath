@@ -23,6 +23,7 @@ type AppModel struct {
 	// View Modes
 	ShowDiagnostics bool
 	ShowFlow        bool
+	CumulativeFlow  bool // Cumulative highlighting mode ('F')
 
 	// Input Mode ('w' command)
 	InputMode       bool

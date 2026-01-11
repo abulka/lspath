@@ -17,12 +17,12 @@ type Parser struct {
 
 // NewParser creates a new Parser with the appropriate regex for the shell.
 func NewParser(shell Shell) *Parser {
-	// Pattern: .*?\+ ?(.*?):(\d+)>(.*)
+	// Pattern: .*?(\++) ?(.*?):(\d+)>(.*)
 	// Matches:
 	// + file:10>command
 	// ...garbage...+ file:10>command
 	return &Parser{
-		re: regexp.MustCompile(`.*\+(?: )?([^:]+):(\d+)>(.*)`),
+		re: regexp.MustCompile(`.*?(\++)(?: )?([^:]+):(\d+)>(.*)`),
 	}
 }
 
@@ -44,10 +44,13 @@ func (p *Parser) Parse(r io.Reader) (chan model.TraceEvent, chan error) {
 		for scanner.Scan() {
 			line := scanner.Text()
 			matches := p.re.FindStringSubmatch(line)
-			if len(matches) == 4 {
-				file := matches[1]
-				lineNumStr := matches[2]
-				cmd := matches[3]
+			if len(matches) == 5 {
+				depthStr := matches[1]
+				file := matches[2]
+				lineNumStr := matches[3]
+				cmd := matches[4]
+
+				depth := len(depthStr)
 				lineNum, _ := strconv.Atoi(lineNumStr)
 
 				// We are looking for PATH changes.
@@ -107,6 +110,7 @@ func (p *Parser) Parse(r io.Reader) (chan model.TraceEvent, chan error) {
 				event := model.TraceEvent{
 					File:       file,
 					Line:       lineNum,
+					Depth:      depth,
 					RawCommand: cmd,
 					PathChange: pathChange,
 				}

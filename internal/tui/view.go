@@ -64,10 +64,25 @@ func (m AppModel) View() string {
 	leftView.WriteString(titleStyle.Render("PATH Entries"))
 	leftView.WriteString("\n\n")
 
-	// Determine current filtered FilterID if in Flow Mode
-	var activeFlowPath string
+	// Determine Highlighting Context
+	var activeFlowID string
+	var activeFlowOrder int
 	if m.ShowFlow && len(m.TraceResult.FlowNodes) > 0 && m.FlowSelectedIdx < len(m.TraceResult.FlowNodes) {
-		activeFlowPath = m.TraceResult.FlowNodes[m.FlowSelectedIdx].FilePath
+		node := m.TraceResult.FlowNodes[m.FlowSelectedIdx]
+		activeFlowID = node.ID
+		activeFlowOrder = node.Order
+	}
+
+	// Create a map of FlowID -> Order for fast lookup if needed,
+	// or just rely on FlowID for specific and something else for cumulative.
+	// Since Entry doesn't have Order, we need to map Entry.FlowID -> Order.
+	// Optimization: Build this map once or on Update?
+	// For TUI, building on View (small N) is fine.
+	flowOrderMap := make(map[string]int)
+	if m.CumulativeFlow {
+		for _, n := range m.TraceResult.FlowNodes {
+			flowOrderMap[n.ID] = n.Order
+		}
 	}
 
 	// Windowing Logic for Left Panel
@@ -108,7 +123,24 @@ func (m AppModel) View() string {
 		isRowSelected := (i == m.SelectedIdx)
 
 		if m.ShowFlow {
-			if strings.EqualFold(strings.TrimSpace(entry.SourceFile), strings.TrimSpace(activeFlowPath)) {
+			// Highlighting Condition
+			highlight := false
+
+			if m.CumulativeFlow {
+				// Cumulative: Highlight if Entry's Node Order <= Active Node Order
+				if order, ok := flowOrderMap[entry.FlowID]; ok {
+					if order <= activeFlowOrder {
+						highlight = true
+					}
+				}
+			} else {
+				// Specific: Highlight only if Entry belong to THIS specific node split
+				if entry.FlowID == activeFlowID {
+					highlight = true
+				}
+			}
+
+			if highlight {
 				if isRowSelected {
 					style = selectedStyle
 				} else {
