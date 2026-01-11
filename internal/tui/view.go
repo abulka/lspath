@@ -239,48 +239,66 @@ func (m AppModel) View() string {
 			// It visually implies return.
 
 			// indent = strings.Repeat("  ", node.Depth) // This line is redundant as indent is already calculated
-			// Annotations
+			// Annotations (User Requested Educational Descriptions)
 			note := ""
-			if strings.HasSuffix(node.FilePath, "/etc/zshenv") {
-				note = " (System-wide, always run)"
+			// Normalize for check
+			checkPath := node.FilePath
+			if strings.HasPrefix(checkPath, "~") {
+				// Expand for check if needed, or just check suffix
 			}
-			if strings.HasSuffix(node.FilePath, "/.zshenv") {
-				note = " (Personal Env)"
+
+			if strings.HasSuffix(checkPath, "/etc/zshenv") {
+				note = " (system-wide, always run)"
 			}
-			if strings.HasSuffix(node.FilePath, "/etc/zprofile") {
-				note = " (System Profile)"
+			if strings.HasSuffix(checkPath, "/.zshenv") || checkPath == "~/.zshenv" {
+				note = " (your personal env file)"
 			}
-			if strings.HasSuffix(node.FilePath, "/.zprofile") {
-				note = " (Personal Profile)"
+
+			if strings.HasSuffix(checkPath, "/etc/zprofile") {
+				note = " (system-wide)"
 			}
-			if strings.HasSuffix(node.FilePath, "/etc/zshrc") {
-				note = " (System RC)"
+			if strings.HasSuffix(checkPath, "/.zprofile") || checkPath == "~/.zprofile" {
+				note = " (your personal profile)"
 			}
-			if strings.HasSuffix(node.FilePath, "/.zshrc") {
-				note = " (Personal RC)"
+
+			if strings.HasSuffix(checkPath, "/etc/zshrc") {
+				note = " (system-wide)"
 			}
-			if strings.HasSuffix(node.FilePath, "/.zlogin") {
-				note = " (Personal Login)"
+			if strings.HasSuffix(checkPath, "/.zshrc") || checkPath == "~/.zshrc" {
+				note = " (your personal rc file)"
 			}
-			if strings.HasSuffix(node.FilePath, "/etc/zshrc_Apple_Terminal") {
+
+			if strings.HasSuffix(checkPath, "/etc/zlogin") {
+				note = " (system-wide)"
+			}
+			if strings.HasSuffix(checkPath, "/.zlogin") || checkPath == "~/.zlogin" {
+				note = " (your personal login file)"
+			}
+
+			if strings.HasSuffix(checkPath, "/etc/zshrc_Apple_Terminal") {
 				note = " (Apple Terminal)"
 			}
-			if strings.Contains(node.FilePath, "cargo/env") {
+			if strings.Contains(checkPath, "cargo/env") {
 				note = " (Rust Cargo)"
 			}
-			if strings.Contains(node.FilePath, "nvm.sh") {
+			if strings.Contains(checkPath, "nvm.sh") {
 				note = " (Node Version Manager)"
 			}
 
 			suffix := ""
 			if isContinuation[node.Order] {
-				// We can keep this or remove it. "cont" is still helpful text.
 				suffix = " (cont.)"
 			}
 
-			// Empty Indicator
-			// If node has 0 entries, mark it.
-			if len(node.Entries) == 0 {
+			// Empty / Not Executed Indicator
+			if node.NotExecuted {
+				// Gray out or special mark?
+				// User asked for [no paths] or [empty]
+				// And specifically "list them all... even if they don't contribute"
+				// "They will only appear if the shell actually executes them" was rejected.
+				// So we distinguish "Ran, no change" vs "Didn't run".
+				suffix += " [Not Executed]"
+			} else if len(node.Entries) == 0 {
 				suffix += " [No Change]"
 			}
 
@@ -290,6 +308,13 @@ func (m AppModel) View() string {
 			// But let's keep suffix for now as "extra" clarity.
 
 			line := fmt.Sprintf("%d. %s%s%s%s", node.Order, indent, name, suffix, note)
+
+			// If NotExecuted, maybe dim it even more?
+			styleToUse := normalStyle
+			if node.NotExecuted {
+				styleToUse = dimStyle
+			}
+
 			// Truncate width
 			if len(line) > rightWidth-2 {
 				line = line[:rightWidth-2] + "…"
@@ -298,7 +323,7 @@ func (m AppModel) View() string {
 			if i == m.FlowSelectedIdx {
 				rightView.WriteString(selectedStyle.Render(line))
 			} else {
-				rightView.WriteString(normalStyle.Render(line))
+				rightView.WriteString(styleToUse.Render(line))
 			}
 			rightView.WriteString("\n")
 		}

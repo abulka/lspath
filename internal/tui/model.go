@@ -24,6 +24,7 @@ type AppModel struct {
 	ShowDiagnostics bool
 	ShowFlow        bool
 	CumulativeFlow  bool // Cumulative highlighting mode ('F')
+	NotExecuted     bool // True if this file was inserted as a placeholder (didn't appear in trace)
 
 	// Search State
 	InputMode       bool

@@ -261,10 +261,120 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 		cleanNodes[i].Order = i + 1
 	}
 
+	// Inject Missing Standard Files (Ghost Nodes)
+	// We want to educate the user about files that didn't run.
+	cleanNodes = injectMissingNodes(cleanNodes)
+	// Renumber again
+	for i := range cleanNodes {
+		cleanNodes[i].Order = i + 1
+	}
+
 	return model.AnalysisResult{
 		PathEntries: entries,
 		FlowNodes:   cleanNodes,
 	}
+}
+
+type standardConfig struct {
+	PathSuffix string
+	Rank       int
+}
+
+var zshStandard = []standardConfig{
+	{"/etc/zshenv", 1},
+	{"/.zshenv", 2},
+	{"/etc/zprofile", 3},
+	{"/.zprofile", 4},
+	{"/etc/zshrc", 5},
+	{"/.zshrc", 6},
+	{"/etc/zlogin", 7},
+	{"/.zlogin", 8},
+}
+
+func injectMissingNodes(nodes []model.ConfigNode) []model.ConfigNode {
+	var result []model.ConfigNode
+	standardIdx := 0
+
+	// Helper to get rank of a node (if it matches standard)
+	getRank := func(path string) int {
+		for _, s := range zshStandard {
+			if strings.HasSuffix(path, s.PathSuffix) {
+				return s.Rank
+			}
+		}
+		return 999 // Non-standard / Nested
+	}
+
+	// We iterate through the actual trace nodes.
+	// Before adding an actual node, we check if we skipped any standard nodes that have a lower Rank.
+
+	for _, node := range nodes {
+		nodeRank := getRank(node.FilePath)
+
+		// If the current actual node has a rank, we fill in gaps up to that rank.
+		if nodeRank != 999 {
+			for standardIdx < len(zshStandard) {
+				std := zshStandard[standardIdx]
+				if std.Rank < nodeRank {
+					// This standard file comes BEFORE the current node, and we haven't seen it.
+					// Insert it.
+					// Construct a nice display path.
+					// We don't know the absolute path easily for HOME, but we can guess.
+					// Or just use the suffix for unique ID and let View handle display?
+					// View expects FilePath.
+					// For /etc, use absolute. For home, use ~/.
+
+					displayPath := std.PathSuffix
+					if strings.HasPrefix(displayPath, "/.") {
+						displayPath = "~" + displayPath // ~/.zshrc
+					}
+
+					result = append(result, model.ConfigNode{
+						ID:          fmt.Sprintf("ghost-%d", std.Rank), // Temp ID
+						FilePath:    displayPath,
+						Depth:       0,
+						NotExecuted: true,
+						Entries:     []int{},
+					})
+					standardIdx++
+				} else if std.Rank == nodeRank {
+					// Match!
+					standardIdx++ // Advance standard
+					break         // Stop checking gaps, add the actual node below
+				} else {
+					// Standard rank > Node rank.
+					// Should not happen if we are sorted?
+					// But maybe we are re-visiting a lower rank (e.g. zshrc sourcing zshenv??)
+					// If we go BACKWARDS in rank, we just ignore the gap filling?
+					break
+				}
+			}
+		}
+
+		// Add the actual node
+		// If it was a match, we effectively "replaced" the ghost with real.
+		// If it was non-standard (999), we just append it (nested file).
+		result = append(result, node)
+	}
+
+	// Append remaining standard files
+	for standardIdx < len(zshStandard) {
+		std := zshStandard[standardIdx]
+		displayPath := std.PathSuffix
+		if strings.HasPrefix(displayPath, "/.") {
+			displayPath = "~" + displayPath
+		}
+		result = append(result, model.ConfigNode{
+			ID:          fmt.Sprintf("ghost-%d", std.Rank),
+			FilePath:    displayPath,
+			Depth:       0,
+			NotExecuted: true,
+			Entries:     []int{},
+		})
+		standardIdx++
+	}
+
+	return result
 }
 
 // GuessShellMode infers shell mode from filename.

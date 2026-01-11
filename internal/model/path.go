@@ -27,11 +27,12 @@ type TraceEvent struct {
 
 // ConfigNode represents a file in the config loading flow.
 type ConfigNode struct {
-	ID       string // e.g. "node-1"
-	FilePath string // e.g. "/etc/zshenv"
-	Order    int    // Sequence order (1, 2, 3...)
-	Depth    int    // Stack depth (indentation level)
-	Entries  []int  // Indices of PathEntries contributed by this node
+	ID          string // e.g. "node-1"
+	FilePath    string // e.g. "/etc/zshenv"
+	Order       int    // Sequence order (1, 2, 3...)
+	Depth       int    // Stack depth (indentation level)
+	Entries     []int  // Indices of PathEntries contributed by this node
+	NotExecuted bool   // True if this file was inserted as a placeholder
 }
 
 // AnalysisResult contains the processed data from a trace.
