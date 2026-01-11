@@ -46,10 +46,31 @@ func (m AppModel) View() string {
 	}
 
 	// Layout dimensions
+	// Layout dimensions
+	// Subtracting 6 for horizontal margin (borders x2 + buffer)
+	// Subtracting 8 for vertical margin (title, footer, borders + buffer)
 	width := m.WindowSize.Width
 	height := m.WindowSize.Height
-	leftWidth := width / 2
-	rightWidth := width - leftWidth - 4 // borders/padding
+
+	netWidth := width - 6
+	if netWidth < 20 {
+		netWidth = 20
+	}
+
+	leftWidth := netWidth / 2
+	rightWidth := netWidth - leftWidth
+
+	// Total box height (including borders)
+	boxHeight := height - 6
+	if boxHeight < 6 {
+		boxHeight = 6
+	}
+
+	// Interior height (excluding borders)
+	interiorHeight := boxHeight - 2
+	if interiorHeight < 2 {
+		interiorHeight = 2
+	}
 
 	// Styles
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
@@ -64,10 +85,9 @@ func (m AppModel) View() string {
 	borderColor := lipgloss.Color("63")
 
 	// LEFT PANEL: PATH List
-	// Always filters by FilteredIndices
 	var leftView strings.Builder
 	leftView.WriteString(titleStyle.Render("PATH Entries"))
-	leftView.WriteString("\n\n")
+	leftView.WriteString("\n\n") // 2 newlines = 3 lines total (Title + blank + blank)
 
 	// Determine Highlighting Context
 	var activeFlowID string
@@ -80,7 +100,6 @@ func (m AppModel) View() string {
 
 	// Create a map of FlowID -> Order for fast lookup if needed,
 	// or just rely on FlowID for specific and something else for cumulative.
-	// Since Entry doesn't have Order, we need to map Entry.FlowID -> Order.
 	// Optimization: Build this map once or on Update?
 	// For TUI, building on View (small N) is fine.
 	flowOrderMap := make(map[string]int)
@@ -91,15 +110,14 @@ func (m AppModel) View() string {
 	}
 
 	// Windowing Logic for Left Panel
-	// To ensure the selected item is always visible.
-	visibleItems := height - 4 - 2 // Account for title and padding
-	if visibleItems < 0 {
-		visibleItems = 0
+	// Header is 2 lines (Title + 1 blank line)
+	visibleItems := interiorHeight - 2
+	if visibleItems < 1 {
+		visibleItems = 1
 	}
 	startIdx := 0
 	endIdx := len(m.FilteredIndices)
 
-	// Adjust window based on selection
 	if len(m.FilteredIndices) > visibleItems {
 		if m.SelectedIdx >= visibleItems/2 {
 			startIdx = m.SelectedIdx - (visibleItems / 2)
@@ -177,35 +195,47 @@ func (m AppModel) View() string {
 
 	left := lipgloss.NewStyle().
 		Width(leftWidth).
-		Height(height - 4).
+		Height(interiorHeight).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("63")).
-		Render(leftView.String())
+		Render(strings.TrimSuffix(leftView.String(), "\n"))
 
 	// RIGHT PANEL: Details OR Flow List
 	var rightView strings.Builder
 
 	if m.ShowFlow {
 		// FLOW MODE
-		rightView.WriteString(titleStyle.Render("Configuration Flow"))
-		rightView.WriteString("\n\n")
+		// RHS interior space matches LHS interior space
+		topH := interiorHeight / 2
+		botH := interiorHeight - topH
 
-		// Windowing for Right Panel
-		visibleItems := height - 4
+		rightView.WriteString(titleStyle.Render("Configuration Flow"))
+		rightView.WriteString("\n\n") // 2 lines overhead (Title + blank line)
+
+		// Windowing for Flow List (Top Panel)
+		// Total panel height is topH.
+		// One line is taken by the bottom divider border.
+		// Two lines are taken by the header (Title + blank).
+		// So visible items = topH - 1 - 2 = topH - 3.
+		visibleFlowItems := topH - 3
+		if visibleFlowItems < 1 {
+			visibleFlowItems = 1
+		}
+
 		startIdx := 0
 		endIdx := len(m.TraceResult.FlowNodes)
 
-		if len(m.TraceResult.FlowNodes) > visibleItems {
-			if m.FlowSelectedIdx >= visibleItems/2 {
-				startIdx = m.FlowSelectedIdx - (visibleItems / 2)
+		if len(m.TraceResult.FlowNodes) > visibleFlowItems {
+			if m.FlowSelectedIdx >= visibleFlowItems/2 {
+				startIdx = m.FlowSelectedIdx - (visibleFlowItems / 2)
 			}
 			if startIdx < 0 {
 				startIdx = 0
 			}
-			if startIdx+visibleItems > len(m.TraceResult.FlowNodes) {
-				startIdx = len(m.TraceResult.FlowNodes) - visibleItems
+			if startIdx+visibleFlowItems > len(m.TraceResult.FlowNodes) {
+				startIdx = len(m.TraceResult.FlowNodes) - visibleFlowItems
 			}
-			endIdx = startIdx + visibleItems
+			endIdx = startIdx + visibleFlowItems
 		}
 
 		// Pre-calculate seen counts to identify duplicates/continuations
@@ -346,9 +376,9 @@ func (m AppModel) View() string {
 				styleToUse = dimStyle
 			}
 
-			// Truncate width
+			// Truncate width strictly
 			if len(line) > rightWidth-2 {
-				line = line[:rightWidth-2] + "…"
+				line = line[:rightWidth-5] + "..."
 			}
 
 			if i == m.FlowSelectedIdx {
@@ -366,70 +396,55 @@ func (m AppModel) View() string {
 		}
 
 		// --- PREVIEW PANEL (BOTTOM) ---
-		// We need to split the view properly
-
-		// Split Dimensions
-		totalH := height - 4
-		topH := totalH / 2
-		botH := totalH - topH - 1 // -1 for separator
-
-		// Truncate flow list string to fit top half
 		flowListStr := rightView.String()
-		flowListLines := strings.Split(flowListStr, "\n")
-
-		// Keep only the lines that fit in topH (accounting for title and borders)
-		maxFlowLines := topH - 3 // -3 for title, padding, border
-		if maxFlowLines < 1 {
-			maxFlowLines = 1
-		}
-
-		if len(flowListLines) > maxFlowLines {
-			flowListLines = flowListLines[:maxFlowLines]
-		}
-
-		flowListStr = strings.Join(flowListLines, "\n")
 		rightView.Reset()
 
-		// Render flow list with border
-		borderStyle := lipgloss.NewStyle().
+		// Split the list lines and ensure we only take what fits the window
+		// visibleFlowItems was used for slicing the node list, so this should already be correct.
+		// However, we trim trailing newlines to prevent Lipgloss expansion.
+		flowListContent := strings.TrimSpace(flowListStr)
+
+		// Render flow list with interior height topH-1 (subtracting 1 for bottom border line).
+		flowListView := lipgloss.NewStyle().
 			Width(rightWidth).
-			Border(lipgloss.NormalBorder(), false, false, true, false). // Bottom border only
-			BorderForeground(borderColor)
+			Height(topH-1).
+			Border(lipgloss.NormalBorder(), false, false, true, false).
+			BorderForeground(borderColor).
+			Render(strings.TrimSuffix(flowListContent, "\n"))
 
 		if m.RightPanelFocus == FocusFlowList {
-			borderStyle = borderStyle.BorderForeground(activeColor)
+			flowListView = lipgloss.NewStyle().
+				Width(rightWidth).
+				Height(topH-1).
+				Border(lipgloss.NormalBorder(), false, false, true, false).
+				BorderForeground(activeColor).
+				Render(strings.TrimSuffix(flowListContent, "\n"))
 		}
-
-		flowListView := borderStyle.Render(flowListStr)
 
 		// Preview View
 		var previewBuilder strings.Builder
-
 		previewHeader := " File Preview "
 		headerStyle := lipgloss.NewStyle().Foreground(dimColor).Bold(true)
-
 		if m.RightPanelFocus == FocusFilePreview {
 			previewHeader = " File Preview (Active) "
 			headerStyle = lipgloss.NewStyle().Foreground(activeColor).Bold(true)
 		}
-
 		previewBuilder.WriteString(headerStyle.Render(previewHeader))
 		previewBuilder.WriteString("\n")
 
-		// Content Slicing
-		lines := strings.Split(m.PreviewContent, "\n")
+		// Content space = botH - 1 (header line)
+		previewContentHeight := botH - 1
+		if previewContentHeight < 1 {
+			previewContentHeight = 1
+		}
+
+		lines := strings.Split(strings.TrimSuffix(m.PreviewContent, "\n"), "\n")
 		startY := m.PreviewScrollY
 		if startY >= len(lines) && len(lines) > 0 {
-			startY = len(lines) - 1
+			startY = len(lines) - previewContentHeight
 		}
 		if startY < 0 {
 			startY = 0
-		}
-
-		// Available space for preview content
-		previewContentHeight := botH - 1 // -1 for header
-		if previewContentHeight < 1 {
-			previewContentHeight = 1
 		}
 
 		endY := startY + previewContentHeight
@@ -437,22 +452,27 @@ func (m AppModel) View() string {
 			endY = len(lines)
 		}
 
-		if startY < len(lines) {
+		if len(lines) > 0 && startY < len(lines) && m.PreviewPath != "" {
 			visibleLines := lines[startY:endY]
 			for _, line := range visibleLines {
-				// Truncate long lines
 				if len(line) > rightWidth {
-					line = line[:rightWidth]
+					line = line[:rightWidth-4] + "..."
 				}
 				previewBuilder.WriteString(line)
 				previewBuilder.WriteString("\n")
 			}
-		} else {
+		} else if len(lines) == 0 && m.PreviewPath != "" {
 			previewBuilder.WriteString("(empty)\n")
+		} else if m.PreviewPath == "" {
+			previewBuilder.WriteString("(no file selected)\n")
 		}
 
-		// Join Top and Bottom
-		finalRight := lipgloss.JoinVertical(lipgloss.Left, flowListView, previewBuilder.String())
+		previewView := lipgloss.NewStyle().
+			Width(rightWidth).
+			Height(botH).
+			Render(strings.TrimSuffix(previewBuilder.String(), "\n"))
+
+		finalRight := lipgloss.JoinVertical(lipgloss.Left, flowListView, previewView)
 		rightView.WriteString(finalRight)
 
 	} else {
@@ -539,10 +559,10 @@ func (m AppModel) View() string {
 
 	right := lipgloss.NewStyle().
 		Width(rightWidth).
-		Height(height - 4).
+		Height(interiorHeight).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("63")).
-		Render(rightView.String())
+		Render(strings.TrimSuffix(rightView.String(), "\n"))
 
 	// Footer
 	help := "Help: ↑/↓: Navigate • d: Diagnostics • f/F: Flow • w: Which • q: Quit"

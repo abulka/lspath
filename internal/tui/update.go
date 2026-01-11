@@ -168,6 +168,38 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.PreviewScrollY = 0
 				}
 			}
+		case "home", "g":
+			// Jump to top of preview
+			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+				m.PreviewScrollY = 0
+			}
+		case "end", "G":
+			// Jump to end of preview - show last page
+			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+				// Calculate the actual number of lines
+				lines := strings.Split(m.PreviewContent, "\n")
+				if len(lines) > 0 {
+					// Calculate visible height (matches view.go logic)
+					// contentHeight = height - 8
+					// topH = contentHeight / 2
+					// botH = contentHeight - topH - 1
+					contentHeight := m.WindowSize.Height - 10
+					topH := contentHeight / 2
+					botH := contentHeight - topH
+					visibleHeight := botH - 1 // -1 for header
+
+					if visibleHeight < 1 {
+						visibleHeight = 1
+					}
+
+					// Set scroll to show last page: position where last line is at bottom
+					lastLinePos := len(lines) - visibleHeight
+					if lastLinePos < 0 {
+						lastLinePos = 0
+					}
+					m.PreviewScrollY = lastLinePos
+				}
+			}
 		case "tab":
 			// Tab switches focus in flow mode
 			if m.ShowFlow {
