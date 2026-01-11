@@ -278,6 +278,49 @@ func (m AppModel) View() string {
 			rightView.WriteString(fmt.Sprintf("\nLine:       %d", entry.LineNumber))
 			rightView.WriteString(fmt.Sprintf("\nMode:       %s", entry.Mode))
 
+			// Search Match Details
+			if m.SearchActive {
+				if filename, ok := m.SearchMatches[idx]; ok {
+					// Get File Info
+					fullPath := fmt.Sprintf("%s/%s", entry.Value, filename) // Simple join
+					// os.Join is better but this works for unix
+
+					info, err := os.Lstat(fullPath)
+					if err == nil {
+						rightView.WriteString("\n\n--- Found Binary ---")
+						rightView.WriteString(fmt.Sprintf("\nName:       %s", filename))
+						rightView.WriteString(fmt.Sprintf("\nPath:       %s", fullPath))
+						rightView.WriteString(fmt.Sprintf("\nSize:       %d bytes", info.Size()))
+						rightView.WriteString(fmt.Sprintf("\nMode:       %s", info.Mode()))
+						rightView.WriteString(fmt.Sprintf("\nModified:   %s", info.ModTime().Format("2006-01-02 15:04:05")))
+
+						// Check for Symlink
+						if info.Mode()&os.ModeSymlink != 0 {
+							target, err := os.Readlink(fullPath)
+							if err == nil {
+								rightView.WriteString(fmt.Sprintf("\n\n🔗 Symlink -> %s", target))
+								// Maybe Stat the target too?
+								if tInfo, err := os.Stat(fullPath); err == nil {
+									rightView.WriteString(fmt.Sprintf("\nTarget Mode: %s", tInfo.Mode()))
+								} else {
+									rightView.WriteString(" (Broken Link)")
+								}
+							}
+						}
+
+						// Check Executable
+						// Check bit 0100 (User Exec), 0010 (Group), 0001 (Other)
+						perm := info.Mode().Perm()
+						isExec := (perm&0100) != 0 || (perm&0010) != 0 || (perm&0001) != 0
+						if isExec {
+							rightView.WriteString("\n✅ Executable")
+						} else {
+							rightView.WriteString("\n❌ Not Executable")
+						}
+					}
+				}
+			}
+
 			if m.ShowDiagnostics {
 				if entry.IsDuplicate {
 					rightView.WriteString(adviceStyle.Render(fmt.Sprintf("\n\n⚠️ DUPLICATE detected!\n%s", entry.Remediation)))

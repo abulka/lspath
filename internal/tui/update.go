@@ -151,44 +151,60 @@ func (m *AppModel) performSearch() {
 		}
 	} else {
 		m.SearchActive = true
+		m.SearchMatches = make(map[int]string)
+		seenDirs := make(map[string]bool)
+
 		var result []int
 		for i, entry := range m.TraceResult.PathEntries {
 			dir := entry.Value
 
-			// Filesystem Scan
-			// Optimization: Skip valid check? No, TUI should show if dir exists.
-			files, err := os.ReadDir(dir)
-			if err != nil {
-				// If directory doesn't exist, we can't find anything there.
-				// Should we still check path string match? User said "typing 'pyt' (which should be a wildcard)".
-				// Implies matching binaries.
-				// But fallback to path match if dir missing?
-				// Probably better to ignore missing dirs for *binary* search.
+			// Deduplication: Only show unique directories in search results
+			if seenDirs[dir] {
 				continue
 			}
 
+			// Filesystem Scan
+			files, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+
+			// Find *best* match (exact matches preferred over prefix)
+			// Or just first one? User said "first path entry that finds that binary".
+			// If we have multiple matches in the directory, we need to pick one to show details for.
+			// Let's store the first one we find, but prefer exact term match.
+
+			var matchedFile string
 			found := false
+
+			// First pass: Exact match check (if we had efficient lookup).
+			// Since we are iterating, let's just find first prefix match,
+			// but if we find exact match later, swap it?
+
 			for _, f := range files {
 				if f.IsDir() {
 					continue
 				}
 				name := strings.ToLower(f.Name())
 
-				// Partial match starts with? Or contains?
-				// "typing 'pyt' ... nothing displayed". Implies prefix.
-				// "wildcard" usually implies prefix or glob.
-				// Let's assume Prefix for standard "autocompletion" style feel,
-				// but typical `which` might expect exact match.
-				// User said "wildcard", so let's do HasPrefix for partial matching typing.
-
 				if strings.HasPrefix(name, term) {
+					matchedFile = f.Name() // Store original case
 					found = true
-					break
+
+					// Optimisation: If exact match, we can stop looking in this dir.
+					if name == term {
+						break
+					}
+					// Continue to see if there is a better (exact) match?
+					// Example: term="py", matches "python", "pypi".
+					// If we find "python" first, that's good.
 				}
 			}
 
 			if found {
+				seenDirs[dir] = true
 				result = append(result, i)
+				m.SearchMatches[i] = matchedFile
 			}
 		}
 		m.FilteredIndices = result

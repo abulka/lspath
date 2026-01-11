@@ -25,10 +25,11 @@ type AppModel struct {
 	ShowFlow        bool
 	CumulativeFlow  bool // Cumulative highlighting mode ('F')
 
-	// Input Mode ('w' command)
+	// Search State
 	InputMode       bool
 	InputBuffer     textinput.Model
-	FilteredIndices []int // Indices of PathEntries matching valid search
+	FilteredIndices []int          // Indices of PathEntries to show
+	SearchMatches   map[int]string // Map of PathEntry Index -> Matched Filename
 	SearchActive    bool
 
 	// Components
