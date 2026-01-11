@@ -366,75 +366,93 @@ func (m AppModel) View() string {
 		}
 
 		// --- PREVIEW PANEL (BOTTOM) ---
-		// Calculate remaining height
-		// We used flowWindowHeight lines (approximated, actually we wrote loop).
-		// To do a real split, we should render into two strings/builders.
-
-		flowListStr := rightView.String()
-		rightView.Reset()
+		// We need to split the view properly
 
 		// Split Dimensions
 		totalH := height - 4
 		topH := totalH / 2
-		botH := totalH - topH - 2 // -2 for border/title
+		botH := totalH - topH - 1 // -1 for separator
 
-		// Re-render Flow List with bounded height
-		// Actually, we can just style the string we built?
-		// No, we need to handle windowing for the flow list separately if we constrained it.
-		// Current implementation "scrolled" by standard window logic.
-		// We should just use Lipgloss JoinVertical.
+		// Truncate flow list string to fit top half
+		flowListStr := rightView.String()
+		flowListLines := strings.Split(flowListStr, "\n")
 
-		flowListView := lipgloss.NewStyle().
+		// Keep only the lines that fit in topH (accounting for title and borders)
+		maxFlowLines := topH - 3 // -3 for title, padding, border
+		if maxFlowLines < 1 {
+			maxFlowLines = 1
+		}
+
+		if len(flowListLines) > maxFlowLines {
+			flowListLines = flowListLines[:maxFlowLines]
+		}
+
+		flowListStr = strings.Join(flowListLines, "\n")
+		rightView.Reset()
+
+		// Render flow list with border
+		borderStyle := lipgloss.NewStyle().
 			Width(rightWidth).
-			Height(topH).
-			Border(lipgloss.NormalBorder(), false, false, true, false). // Bottom border
-			BorderForeground(borderColor).
-			Render(flowListStr)
+			Border(lipgloss.NormalBorder(), false, false, true, false). // Bottom border only
+			BorderForeground(borderColor)
 
 		if m.RightPanelFocus == FocusFlowList {
-			flowListView = lipgloss.NewStyle().
-				Width(rightWidth).
-				Height(topH).
-				Border(lipgloss.NormalBorder(), false, false, true, false).
-				BorderForeground(activeColor). // Highlight split line
-				Render(flowListStr)
+			borderStyle = borderStyle.BorderForeground(activeColor)
 		}
+
+		flowListView := borderStyle.Render(flowListStr)
 
 		// Preview View
+		var previewBuilder strings.Builder
+
 		previewHeader := " File Preview "
+		headerStyle := lipgloss.NewStyle().Foreground(dimColor).Bold(true)
+
 		if m.RightPanelFocus == FocusFilePreview {
 			previewHeader = " File Preview (Active) "
+			headerStyle = lipgloss.NewStyle().Foreground(activeColor).Bold(true)
 		}
 
-		previewTitle := lipgloss.NewStyle().
-			Foreground(dimColor).
-			Render(previewHeader)
-
-		if m.RightPanelFocus == FocusFilePreview {
-			previewTitle = lipgloss.NewStyle().Foreground(activeColor).Render(previewHeader)
-		}
+		previewBuilder.WriteString(headerStyle.Render(previewHeader))
+		previewBuilder.WriteString("\n")
 
 		// Content Slicing
 		lines := strings.Split(m.PreviewContent, "\n")
 		startY := m.PreviewScrollY
-		if startY > len(lines) {
-			startY = len(lines)
+		if startY >= len(lines) && len(lines) > 0 {
+			startY = len(lines) - 1
 		}
-		endY := startY + botH
+		if startY < 0 {
+			startY = 0
+		}
+
+		// Available space for preview content
+		previewContentHeight := botH - 1 // -1 for header
+		if previewContentHeight < 1 {
+			previewContentHeight = 1
+		}
+
+		endY := startY + previewContentHeight
 		if endY > len(lines) {
 			endY = len(lines)
 		}
 
-		visibleLines := lines[startY:endY]
-		previewBody := strings.Join(visibleLines, "\n")
-
-		previewView := lipgloss.JoinVertical(lipgloss.Left,
-			previewTitle,
-			lipgloss.NewStyle().Width(rightWidth).Render(previewBody),
-		)
+		if startY < len(lines) {
+			visibleLines := lines[startY:endY]
+			for _, line := range visibleLines {
+				// Truncate long lines
+				if len(line) > rightWidth {
+					line = line[:rightWidth]
+				}
+				previewBuilder.WriteString(line)
+				previewBuilder.WriteString("\n")
+			}
+		} else {
+			previewBuilder.WriteString("(empty)\n")
+		}
 
 		// Join Top and Bottom
-		finalRight := lipgloss.JoinVertical(lipgloss.Left, flowListView, previewView)
+		finalRight := lipgloss.JoinVertical(lipgloss.Left, flowListView, previewBuilder.String())
 		rightView.WriteString(finalRight)
 
 	} else {
