@@ -113,6 +113,9 @@ func (m AppModel) View() string {
 		entry := m.TraceResult.PathEntries[idx]
 
 		line := fmt.Sprintf("%d. %s", idx+1, entry.Value)
+		if entry.IsDuplicate {
+			line += " (dup)"
+		}
 		// Truncate
 		if len(line) > leftWidth-2 {
 			line = line[:leftWidth-2] + "…"

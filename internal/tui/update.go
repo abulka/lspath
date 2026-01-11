@@ -55,16 +55,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Just exit input mode? Or keep it?
 				// For now, exit input mode but keep search active state.
 				m.InputMode = false
-				m.InputBuffer.Blur()
 				m.performSearch()
 				return m, nil
 			case tea.KeyEsc:
+				// Exit search mode and clear search
 				m.InputMode = false
 				m.InputBuffer.Blur()
-				m.SearchActive = false
-				// Reset filter
-				m.FilteredIndices = nil
-				m.performSearch() // Reset
+				m.SearchActive = false // Disable search
+				m.InputBuffer.SetValue("")
+				m.performSearch() // Reset filter to all
 				return m, nil
 			}
 			m.InputBuffer, cmd = m.InputBuffer.Update(msg)
@@ -139,19 +138,41 @@ func (m *AppModel) performSearch() {
 		m.SearchActive = true
 		var result []int
 		for i, entry := range m.TraceResult.PathEntries {
-			// Search for binary existence?
-			// Or just string match on path?
-			// User asked: "let use type in a binary e.g. python and the first path entru that finds that binary would light up"
-			// This requires filesystem scanning.
-			// For now, let's implement naive string match on PATH value as a baseline
-			// AND a mock "binary search" if it looks like a binary name.
-			// Actually, I should probably check if `entry.Value` + `term` exists.
-			// But for speed, let's just do path string match + "mock".
-			// Wait, I can implement the binary search logic later in Analyzer "Diagnostics" or "Search".
-			// For now, let's just match the path string to unblock TUI.
+			dir := entry.Value
 
-			// TODO: Real binary search requires checking file existence.
-			if strings.Contains(strings.ToLower(entry.Value), term) {
+			// Filesystem Scan
+			// Optimization: Skip valid check? No, TUI should show if dir exists.
+			files, err := os.ReadDir(dir)
+			if err != nil {
+				// If directory doesn't exist, we can't find anything there.
+				// Should we still check path string match? User said "typing 'pyt' (which should be a wildcard)".
+				// Implies matching binaries.
+				// But fallback to path match if dir missing?
+				// Probably better to ignore missing dirs for *binary* search.
+				continue
+			}
+
+			found := false
+			for _, f := range files {
+				if f.IsDir() {
+					continue
+				}
+				name := strings.ToLower(f.Name())
+
+				// Partial match starts with? Or contains?
+				// "typing 'pyt' ... nothing displayed". Implies prefix.
+				// "wildcard" usually implies prefix or glob.
+				// Let's assume Prefix for standard "autocompletion" style feel,
+				// but typical `which` might expect exact match.
+				// User said "wildcard", so let's do HasPrefix for partial matching typing.
+
+				if strings.HasPrefix(name, term) {
+					found = true
+					break
+				}
+			}
+
+			if found {
 				result = append(result, i)
 			}
 		}
