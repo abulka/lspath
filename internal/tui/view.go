@@ -65,9 +65,9 @@ func (m AppModel) View() string {
 	leftView.WriteString("\n\n")
 
 	// Determine current filtered FilterID if in Flow Mode
-	var activeFlowID string
+	var activeFlowPath string
 	if m.ShowFlow && len(m.TraceResult.FlowNodes) > 0 && m.FlowSelectedIdx < len(m.TraceResult.FlowNodes) {
-		activeFlowID = m.TraceResult.FlowNodes[m.FlowSelectedIdx].ID
+		activeFlowPath = m.TraceResult.FlowNodes[m.FlowSelectedIdx].FilePath
 	}
 
 	// Windowing Logic for Left Panel
@@ -108,7 +108,7 @@ func (m AppModel) View() string {
 		isRowSelected := (i == m.SelectedIdx)
 
 		if m.ShowFlow {
-			if entry.FlowID == activeFlowID {
+			if entry.SourceFile == activeFlowPath {
 				if isRowSelected {
 					style = selectedStyle
 				} else {

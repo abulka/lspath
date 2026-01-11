@@ -149,9 +149,61 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 		}
 	}
 
+	// Post-process Flow Graph: Clean up noise
+	// 1. Attribute entries to nodes (reverse mapping)
+	// 2. Filter nodes with 0 entries (unless it's the very first node, maybe?)
+	// 3. Merge adjacent nodes with same FilePath
+
+	// First, populate Entries indices in FlowNodes
+	nodeMap := make(map[string]*model.ConfigNode)
+	for i := range flowNodes {
+		nodeMap[flowNodes[i].ID] = &flowNodes[i]
+	}
+	for i, e := range entries {
+		if node, ok := nodeMap[e.FlowID]; ok {
+			node.Entries = append(node.Entries, i)
+		}
+	}
+
+	// Filter and Merge
+	var cleanNodes []model.ConfigNode
+	for _, node := range flowNodes {
+		// Filter empty nodes
+		if len(node.Entries) == 0 {
+			continue
+		}
+
+		// Merge with previous if same file
+		if len(cleanNodes) > 0 {
+			last := &cleanNodes[len(cleanNodes)-1]
+			if last.FilePath == node.FilePath {
+				// Merge
+				// Entries are just indices into main list, so appending is fine
+				// (Assuming main list isn't reordered, which it isn't)
+				last.Entries = append(last.Entries, node.Entries...)
+				// We need to update the FlowID of the entries that pointed to this 'node'
+				// to point to 'last' instead.
+				// iterate through entries... expensive?
+				// No, we know which entries: `node.Entries`.
+				for _, entryIdx := range node.Entries {
+					entries[entryIdx].FlowID = last.ID
+				}
+				continue
+			}
+		}
+
+		// Append new
+		cleanNodes = append(cleanNodes, node)
+	}
+
+	// Renumber
+	for i := range cleanNodes {
+		cleanNodes[i].Order = i + 1
+	}
+
 	return model.AnalysisResult{
 		PathEntries: entries,
-		FlowNodes:   flowNodes,
+		FlowNodes:   cleanNodes,
 	}
 }
 
