@@ -1,0 +1,235 @@
+{
+  "PathEntries": [
+    {
+      "Value": ".",
+      "SourceFile": "/Users/andy/.zshrc",
+      "LineNumber": 55,
+      "Mode": "Interactive",
+      "Shadows": null,
+      "IsDuplicate": false,
+      "DuplicateOf": 0,
+      "Remediation": "",
+      "FlowID": "node-23"
+    },
+    {
+      "Value": "/usr/local/lib/antlr-4.12.0-complete.jar",
+      "SourceFile": "/Users/andy/.zshrc",
+      "LineNumber": 55,
+      "Mode": "Interactive",
+      "Shadows": null,
+      "IsDuplicate": false,
+      "DuplicateOf": 0,
+      "Remediation": "",
+      "FlowID": "node-23"
+    },
+    {
+      "Value": ".",
+      "SourceFile": "/Users/andy/.zshrc",
+      "LineNumber": 55,
+      "Mode": "Interactive",
+      "Shadows": null,
+      "IsDuplicate": true,
+      "DuplicateOf": 0,
+      "Remediation": "Duplicate of entry 1 (from /Users/andy/.zshrc). Check /Users/andy/.zshrc:55 to see why it's re-added.",
+      "FlowID": "node-23"
+    },
+    {
+      "Value": "/usr/local/lib/antlr-4.12.0-complete.jar",
+      "SourceFile": "/Users/andy/.zshrc",
+      "LineNumber": 55,
+      "Mode": "Interactive",
+      "Shadows": null,
+      "IsDuplicate": true,
+      "DuplicateOf": 1,
+      "Remediation": "Duplicate of entry 2 (from /Users/andy/.zshrc). Check /Users/andy/.zshrc:55 to see why it's re-added.",
+      "FlowID": "node-23"
+    },
+    {
+      "Value": ".",
+      "SourceFile": "/Users/andy/.zshrc",
+      "LineNumber": 55,
+      "Mode": "Interactive",
+      "Shadows": null,
+      "IsDuplicate": true,
+      "DuplicateOf": 0,
+      "Remediation": "Duplicate of entry 1 (from /Users/andy/.zshrc). Check /Users/andy/.zshrc:55 to see why it's re-added.",
+      "FlowID": "node-23"
+    },
+    {
+      "Value": "/usr/local/lib/antlr-4.12.0-complete.jar",
+      "SourceFile": "/Users/andy/.zshrc",
+      "LineNumber": 55,
+      "Mode": "Interactive",
+      "Shadows": null,
+      "IsDuplicate": true,
+      "DuplicateOf": 1,
+      "Remediation": "Duplicate of entry 2 (from /Users/andy/.zshrc). Check /Users/andy/.zshrc:55 to see why it's re-added.",
+      "FlowID": "node-23"
+    }
+  ],
+  "FlowNodes": [
+    {
+      "ID": "node-1",
+      "FilePath": "/Users/andy/.zshenv",
+      "Order": 1,
+      "Entries": []
+    },
+    {
+      "ID": "node-2",
+      "FilePath": "/Users/andy/.cargo/env",
+      "Order": 2,
+      "Entries": []
+    },
+    {
+      "ID": "node-3",
+      "FilePath": "/etc/zprofile",
+      "Order": 3,
+      "Entries": []
+    },
+    {
+      "ID": "node-4",
+      "FilePath": "/Users/andy/.zprofile",
+      "Order": 4,
+      "Entries": []
+    },
+    {
+      "ID": "node-5",
+      "FilePath": "/Users/andy/.orbstack/shell/init.zsh",
+      "Order": 5,
+      "Entries": []
+    },
+    {
+      "ID": "node-6",
+      "FilePath": "/etc/zshrc",
+      "Order": 6,
+      "Entries": []
+    },
+    {
+      "ID": "node-7",
+      "FilePath": "/Users/andy/.zshrc",
+      "Order": 7,
+      "Entries": []
+    },
+    {
+      "ID": "node-8",
+      "FilePath": "/opt/homebrew/opt/nvm/nvm.sh",
+      "Order": 8,
+      "Entries": []
+    },
+    {
+      "ID": "node-9",
+      "FilePath": "/opt/homebrew/Cellar/nvm/0.39.3/libexec/nvm.sh",
+      "Order": 9,
+      "Entries": []
+    },
+    {
+      "ID": "node-10",
+      "FilePath": "/opt/homebrew/opt/nvm/nvm.sh",
+      "Order": 10,
+      "Entries": []
+    },
+    {
+      "ID": "node-11",
+      "FilePath": "/Users/andy/.zshrc",
+      "Order": 11,
+      "Entries": []
+    },
+    {
+      "ID": "node-12",
+      "FilePath": "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm",
+      "Order": 12,
+      "Entries": []
+    },
+    {
+      "ID": "node-13",
+      "FilePath": "/usr/share/zsh/5.9/functions/compinit",
+      "Order": 13,
+      "Entries": []
+    },
+    {
+      "ID": "node-14",
+      "FilePath": "/usr/share/zsh/5.9/functions/compaudit",
+      "Order": 14,
+      "Entries": []
+    },
+    {
+      "ID": "node-15",
+      "FilePath": "/usr/share/zsh/5.9/functions/compinit",
+      "Order": 15,
+      "Entries": []
+    },
+    {
+      "ID": "node-16",
+      "FilePath": "/Users/andy/.zcompdump",
+      "Order": 16,
+      "Entries": []
+    },
+    {
+      "ID": "node-17",
+      "FilePath": "/usr/share/zsh/5.9/functions/compinit",
+      "Order": 17,
+      "Entries": []
+    },
+    {
+      "ID": "node-18",
+      "FilePath": "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm",
+      "Order": 18,
+      "Entries": []
+    },
+    {
+      "ID": "node-19",
+      "FilePath": "/usr/share/zsh/5.9/functions/bashcompinit",
+      "Order": 19,
+      "Entries": []
+    },
+    {
+      "ID": "node-20",
+      "FilePath": "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm",
+      "Order": 20,
+      "Entries": []
+    },
+    {
+      "ID": "node-21",
+      "FilePath": "/Users/andy/.zshrc",
+      "Order": 21,
+      "Entries": []
+    },
+    {
+      "ID": "node-22",
+      "FilePath": "/Users/andy/.cargo/env",
+      "Order": 22,
+      "Entries": []
+    },
+    {
+      "ID": "node-23",
+      "FilePath": "/Users/andy/.zshrc",
+      "Order": 23,
+      "Entries": []
+    },
+    {
+      "ID": "node-24",
+      "FilePath": "/Users/andy/.bun/_bun",
+      "Order": 24,
+      "Entries": []
+    },
+    {
+      "ID": "node-25",
+      "FilePath": "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm",
+      "Order": 25,
+      "Entries": []
+    },
+    {
+      "ID": "node-26",
+      "FilePath": "/Users/andy/.zshrc",
+      "Order": 26,
+      "Entries": []
+    },
+    {
+      "ID": "node-27",
+      "FilePath": "zsh",
+      "Order": 27,
+      "Entries": []
+    }
+  ],
+  "Diagnostics": null
+}
