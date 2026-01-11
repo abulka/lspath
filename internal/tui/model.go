@@ -38,6 +38,7 @@ type AppModel struct {
 	PreviewContent  string
 	PreviewScrollY  int
 	PreviewPath     string
+	ScrollPositions map[string]int // Map of file path -> scroll position
 
 	// Components
 	DetailsViewport viewport.Model
@@ -56,8 +57,9 @@ func InitialModel() AppModel {
 	ti.Width = 20
 
 	return AppModel{
-		Loading:     true,
-		InputBuffer: ti,
-		SelectedIdx: 0,
+		Loading:         true,
+		InputBuffer:     ti,
+		SelectedIdx:     0,
+		ScrollPositions: make(map[string]int),
 	}
 }

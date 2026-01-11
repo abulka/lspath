@@ -126,6 +126,48 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.SelectedIdx++
 				}
 			}
+		case "pgdown":
+			// Page down in preview
+			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+				m.PreviewScrollY += 10
+			}
+		case "pgup":
+			// Page up in preview
+			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+				if m.PreviewScrollY > 10 {
+					m.PreviewScrollY -= 10
+				} else {
+					m.PreviewScrollY = 0
+				}
+			}
+		case "ctrl+d":
+			// Vim: half page down
+			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+				m.PreviewScrollY += 5
+			}
+		case "ctrl+u":
+			// Vim: half page up
+			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+				if m.PreviewScrollY > 5 {
+					m.PreviewScrollY -= 5
+				} else {
+					m.PreviewScrollY = 0
+				}
+			}
+		case "ctrl+f":
+			// Vim: full page down
+			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+				m.PreviewScrollY += 10
+			}
+		case "ctrl+b":
+			// Vim: full page up
+			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+				if m.PreviewScrollY > 10 {
+					m.PreviewScrollY -= 10
+				} else {
+					m.PreviewScrollY = 0
+				}
+			}
 		case "tab":
 			// Tab switches focus in flow mode
 			if m.ShowFlow {
@@ -253,6 +295,11 @@ func (m *AppModel) performSearch() {
 }
 
 func (m *AppModel) loadSelectedFile() {
+	// Save current scroll position before switching files
+	if m.PreviewPath != "" {
+		m.ScrollPositions[m.PreviewPath] = m.PreviewScrollY
+	}
+
 	if m.FlowSelectedIdx < 0 || m.FlowSelectedIdx >= len(m.TraceResult.FlowNodes) {
 		m.PreviewContent = ""
 		m.PreviewPath = ""
@@ -270,7 +317,13 @@ func (m *AppModel) loadSelectedFile() {
 	}
 
 	m.PreviewPath = path
-	m.PreviewScrollY = 0 // Reset scroll
+
+	// Restore previous scroll position if we've viewed this file before
+	if savedScroll, exists := m.ScrollPositions[path]; exists {
+		m.PreviewScrollY = savedScroll
+	} else {
+		m.PreviewScrollY = 0 // Reset scroll for new files
+	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
