@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"lspath/internal/model"
@@ -90,8 +92,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "up", "k":
 			if m.ShowFlow {
-				if m.FlowSelectedIdx > 0 {
-					m.FlowSelectedIdx--
+				if m.RightPanelFocus == FocusFilePreview {
+					// Scroll preview up
+					if m.PreviewScrollY > 0 {
+						m.PreviewScrollY--
+					}
+				} else {
+					// Navigate flow list
+					if m.FlowSelectedIdx > 0 {
+						m.FlowSelectedIdx--
+						m.loadSelectedFile()
+					}
 				}
 			} else {
 				if m.SelectedIdx > 0 {
@@ -100,12 +111,28 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "down", "j":
 			if m.ShowFlow {
-				if m.FlowSelectedIdx < len(m.TraceResult.FlowNodes)-1 {
-					m.FlowSelectedIdx++
+				if m.RightPanelFocus == FocusFilePreview {
+					// Scroll preview down
+					m.PreviewScrollY++
+				} else {
+					// Navigate flow list
+					if m.FlowSelectedIdx < len(m.TraceResult.FlowNodes)-1 {
+						m.FlowSelectedIdx++
+						m.loadSelectedFile()
+					}
 				}
 			} else {
 				if m.SelectedIdx < len(m.FilteredIndices)-1 {
 					m.SelectedIdx++
+				}
+			}
+		case "tab":
+			// Tab switches focus in flow mode
+			if m.ShowFlow {
+				if m.RightPanelFocus == FocusFlowList {
+					m.RightPanelFocus = FocusFilePreview
+				} else {
+					m.RightPanelFocus = FocusFlowList
 				}
 			}
 		case "d":
@@ -120,12 +147,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.TraceResult.FlowNodes) > 0 && m.FlowSelectedIdx >= len(m.TraceResult.FlowNodes) {
 				m.FlowSelectedIdx = 0
 			}
+			// Load file when entering flow mode
+			if m.ShowFlow {
+				m.loadSelectedFile()
+			}
 		case "F":
 			// Toggle Cumulative Mode
 			m.CumulativeFlow = !m.CumulativeFlow
 			if m.CumulativeFlow {
 				m.ShowFlow = true
 				m.ShowDiagnostics = false
+				m.loadSelectedFile()
 			} else {
 				// If turning off cumulative, stay in flow mode?
 			}
@@ -217,6 +249,38 @@ func (m *AppModel) performSearch() {
 		} else {
 			m.SelectedIdx = 0
 		}
+	}
+}
+
+func (m *AppModel) loadSelectedFile() {
+	if m.FlowSelectedIdx < 0 || m.FlowSelectedIdx >= len(m.TraceResult.FlowNodes) {
+		m.PreviewContent = ""
+		m.PreviewPath = ""
+		return
+	}
+
+	node := m.TraceResult.FlowNodes[m.FlowSelectedIdx]
+	path := node.FilePath
+
+	// Expand ~
+	if strings.HasPrefix(path, "~") {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, path[1:])
+		}
+	}
+
+	m.PreviewPath = path
+	m.PreviewScrollY = 0 // Reset scroll
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			m.PreviewContent = fmt.Sprintf("File not found: %s\n(This file does not exist on your system)", path)
+		} else {
+			m.PreviewContent = fmt.Sprintf("Error reading file: %v", err)
+		}
+	} else {
+		m.PreviewContent = string(content)
 	}
 }
 

@@ -33,9 +33,20 @@ type AppModel struct {
 	SearchMatches   map[int]string // Map of PathEntry Index -> Matched Filename
 	SearchActive    bool
 
+	// Flow Preview State
+	RightPanelFocus int // 0 = Flow List, 1 = File Preview
+	PreviewContent  string
+	PreviewScrollY  int
+	PreviewPath     string
+
 	// Components
 	DetailsViewport viewport.Model
 }
+
+const (
+	FocusFlowList    = 0
+	FocusFilePreview = 1
+)
 
 // InitialModel returns the initial state.
 func InitialModel() AppModel {

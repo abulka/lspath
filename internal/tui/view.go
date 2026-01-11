@@ -58,6 +58,11 @@ func (m AppModel) View() string {
 	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 	highlightStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true) // For matching flow items
 
+	// Colors for split view
+	dimColor := lipgloss.Color("240")
+	activeColor := lipgloss.Color("205")
+	borderColor := lipgloss.Color("63")
+
 	// LEFT PANEL: PATH List
 	// Always filters by FilteredIndices
 	var leftView strings.Builder
@@ -347,12 +352,91 @@ func (m AppModel) View() string {
 			}
 
 			if i == m.FlowSelectedIdx {
-				rightView.WriteString(selectedStyle.Render(line))
+				// Highlight row
+				rendered := selectedStyle.Render(line)
+				// If focused on List, add extra indicator
+				if m.RightPanelFocus == FocusFlowList {
+					rendered = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render(line)
+				}
+				rightView.WriteString(rendered)
 			} else {
 				rightView.WriteString(styleToUse.Render(line))
 			}
 			rightView.WriteString("\n")
 		}
+
+		// --- PREVIEW PANEL (BOTTOM) ---
+		// Calculate remaining height
+		// We used flowWindowHeight lines (approximated, actually we wrote loop).
+		// To do a real split, we should render into two strings/builders.
+
+		flowListStr := rightView.String()
+		rightView.Reset()
+
+		// Split Dimensions
+		totalH := height - 4
+		topH := totalH / 2
+		botH := totalH - topH - 2 // -2 for border/title
+
+		// Re-render Flow List with bounded height
+		// Actually, we can just style the string we built?
+		// No, we need to handle windowing for the flow list separately if we constrained it.
+		// Current implementation "scrolled" by standard window logic.
+		// We should just use Lipgloss JoinVertical.
+
+		flowListView := lipgloss.NewStyle().
+			Width(rightWidth).
+			Height(topH).
+			Border(lipgloss.NormalBorder(), false, false, true, false). // Bottom border
+			BorderForeground(borderColor).
+			Render(flowListStr)
+
+		if m.RightPanelFocus == FocusFlowList {
+			flowListView = lipgloss.NewStyle().
+				Width(rightWidth).
+				Height(topH).
+				Border(lipgloss.NormalBorder(), false, false, true, false).
+				BorderForeground(activeColor). // Highlight split line
+				Render(flowListStr)
+		}
+
+		// Preview View
+		previewHeader := " File Preview "
+		if m.RightPanelFocus == FocusFilePreview {
+			previewHeader = " File Preview (Active) "
+		}
+
+		previewTitle := lipgloss.NewStyle().
+			Foreground(dimColor).
+			Render(previewHeader)
+
+		if m.RightPanelFocus == FocusFilePreview {
+			previewTitle = lipgloss.NewStyle().Foreground(activeColor).Render(previewHeader)
+		}
+
+		// Content Slicing
+		lines := strings.Split(m.PreviewContent, "\n")
+		startY := m.PreviewScrollY
+		if startY > len(lines) {
+			startY = len(lines)
+		}
+		endY := startY + botH
+		if endY > len(lines) {
+			endY = len(lines)
+		}
+
+		visibleLines := lines[startY:endY]
+		previewBody := strings.Join(visibleLines, "\n")
+
+		previewView := lipgloss.JoinVertical(lipgloss.Left,
+			previewTitle,
+			lipgloss.NewStyle().Width(rightWidth).Render(previewBody),
+		)
+
+		// Join Top and Bottom
+		finalRight := lipgloss.JoinVertical(lipgloss.Left, flowListView, previewView)
+		rightView.WriteString(finalRight)
+
 	} else {
 		// NORMAL MODE: Details
 		rightView.WriteString(titleStyle.Render("Details"))
