@@ -313,15 +313,22 @@ func (m AppModel) View() string {
 				statusStr = " [No Change]"
 			} else {
 				if ownCount > 0 && nestedCount > 0 {
-					statusStr = fmt.Sprintf(" [%d paths (+%d nested)]", ownCount, nestedCount)
-				} else if ownCount == 0 && nestedCount > 0 {
-					statusStr = fmt.Sprintf(" [Sources %d paths]", nestedCount)
-				} else {
-					if ownCount == 1 {
-						statusStr = " [1 path]"
-					} else {
-						statusStr = fmt.Sprintf(" [%d paths]", ownCount)
+					// [1 path (+2 nested)] or [2 paths (+2 nested)]
+					pStr := "path"
+					if ownCount > 1 {
+						pStr = "paths"
 					}
+					statusStr = fmt.Sprintf(" [%d %s (+%d nested)]", ownCount, pStr, nestedCount)
+				} else if ownCount == 0 && nestedCount > 0 {
+					// [4 nested paths]
+					statusStr = fmt.Sprintf(" [%d nested paths]", nestedCount)
+				} else {
+					// [1 path]
+					pStr := "path"
+					if ownCount > 1 {
+						pStr = "paths"
+					}
+					statusStr = fmt.Sprintf(" [%d %s]", ownCount, pStr)
 				}
 			}
 
