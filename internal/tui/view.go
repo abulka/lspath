@@ -55,39 +55,55 @@ func (m AppModel) View() string {
 
 	// LEFT PANEL: PATH List
 	var leftView strings.Builder
-	leftView.WriteString(titleStyle.Render("PATH Entries"))
-	leftView.WriteString("\n\n")
 
-	for i, idx := range m.FilteredIndices {
-		// Only render visible items if we had a proper viewport, but for now render all
-		// and let the term handle scrolling or limit to N.
-		// Actually rendering 100 lines might flicker without viewport.
-		// Let's implement primitive "windowing" based on SelectedIdx.
-		// Center around selected.
+	if m.ShowFlow {
+		leftView.WriteString(titleStyle.Render("Configuration Flow"))
+		leftView.WriteString("\n\n")
 
-		// Simple Viewport logic:
-		viewportHeight := height - 4
-		start := 0
-		if m.SelectedIdx > viewportHeight/2 {
-			start = m.SelectedIdx - viewportHeight/2
+		for _, node := range m.TraceResult.FlowNodes {
+			name := node.FilePath
+			// Truncate home for readability
+			// Note: In a real app we'd import os but here just naive
+			// or assume full paths.
+			// We can use style for Order.
+			leftView.WriteString(unselectedItemStyle.Render(fmt.Sprintf("%d. %s", node.Order, name)))
+			leftView.WriteString("\n")
 		}
-		if i < start || i > start+viewportHeight {
-			continue
+	} else {
+		leftView.WriteString(titleStyle.Render("PATH Entries"))
+		leftView.WriteString("\n\n")
+
+		for i, idx := range m.FilteredIndices {
+			// Only render visible items if we had a proper viewport, but for now render all
+			// and let the term handle scrolling or limit to N.
+			// Actually rendering 100 lines might flicker without viewport.
+			// Let's implement primitive "windowing" based on SelectedIdx.
+			// Center around selected.
+
+			// Simple Viewport logic:
+			viewportHeight := height - 4
+			start := 0
+			if m.SelectedIdx > viewportHeight/2 {
+				start = m.SelectedIdx - viewportHeight/2
+			}
+			if i < start || i > start+viewportHeight {
+				continue
+			}
+
+			entry := m.TraceResult.PathEntries[idx]
+			cursor := " "
+			style := unselectedItemStyle
+			if i == m.SelectedIdx {
+				cursor = ">"
+				style = selectedItemStyle
+			}
+
+			// If search active and matched, maybe highlight?
+			// Currently FilteredIndices ONLY contains matches, so they are all matches.
+
+			leftView.WriteString(style.Render(fmt.Sprintf("%s %s", cursor, entry.Value)))
+			leftView.WriteString("\n")
 		}
-
-		entry := m.TraceResult.PathEntries[idx]
-		cursor := " "
-		style := unselectedItemStyle
-		if i == m.SelectedIdx {
-			cursor = ">"
-			style = selectedItemStyle
-		}
-
-		// If search active and matched, maybe highlight?
-		// Currently FilteredIndices ONLY contains matches, so they are all matches.
-
-		leftView.WriteString(style.Render(fmt.Sprintf("%s %s", cursor, entry.Value)))
-		leftView.WriteString("\n")
 	}
 
 	// RIGHT PANEL: Details
@@ -97,35 +113,47 @@ func (m AppModel) View() string {
 	rightView.WriteString(titleStyle.Render("Details"))
 	rightView.WriteString("\n")
 
-	if len(m.FilteredIndices) > 0 {
-		idx := m.FilteredIndices[m.SelectedIdx]
-		entry := m.TraceResult.PathEntries[idx]
-
-		rightView.WriteString(fmt.Sprintf("\nDirectory:  %s", entry.Value))
-		rightView.WriteString(fmt.Sprintf("\nSource:     %s", entry.SourceFile))
-		rightView.WriteString(fmt.Sprintf("\nLine:       %d", entry.LineNumber))
-		rightView.WriteString(fmt.Sprintf("\nMode:       %s", entry.Mode))
-
-		if m.ShowDiagnostics {
-			if entry.IsDuplicate {
-				rightView.WriteString(adviceStyle.Render(fmt.Sprintf("\n\n⚠️ DUPLICATE detected!\n%s", entry.Remediation)))
-			} else {
-				rightView.WriteString("\n\n✅ No issues detected.")
-			}
-		} else {
-			if entry.IsDuplicate {
-				rightView.WriteString("\n\n(Duplicate detected. Press 'd' for details)")
-			}
-		}
-
-		// Flow info
-		rightView.WriteString(fmt.Sprintf("\n\nFlow Node: %s", entry.FlowID))
+	if m.ShowFlow {
+		// Flow Mode Details
+		// Show info about the selected node?
+		// We don't have interactive flow selection yet, just a list.
+		// So just explain what Flow Mode is.
+		rightView.WriteString("\nShowing configuration loading sequence.")
+		rightView.WriteString("\n\nThis list shows the order in which")
+		rightView.WriteString("\nfiles were sourced by the shell.")
+		rightView.WriteString("\n\n(Select a file to see details - Coming Soon)")
 	} else {
-		rightView.WriteString("\nNo entries found.")
+		// PATH Mode Details
+		if len(m.FilteredIndices) > 0 && m.SelectedIdx < len(m.FilteredIndices) {
+			idx := m.FilteredIndices[m.SelectedIdx]
+			entry := m.TraceResult.PathEntries[idx]
+
+			rightView.WriteString(fmt.Sprintf("\nDirectory:  %s", entry.Value))
+			rightView.WriteString(fmt.Sprintf("\nSource:     %s", entry.SourceFile))
+			rightView.WriteString(fmt.Sprintf("\nLine:       %d", entry.LineNumber))
+			rightView.WriteString(fmt.Sprintf("\nMode:       %s", entry.Mode))
+
+			if m.ShowDiagnostics {
+				if entry.IsDuplicate {
+					rightView.WriteString(adviceStyle.Render(fmt.Sprintf("\n\n⚠️ DUPLICATE detected!\n%s", entry.Remediation)))
+				} else {
+					rightView.WriteString("\n\n✅ No issues detected.")
+				}
+			} else {
+				if entry.IsDuplicate {
+					rightView.WriteString("\n\n(Duplicate detected. Press 'd' for details)")
+				}
+			}
+
+			// Flow info
+			rightView.WriteString(fmt.Sprintf("\n\nFlow Node: %s", entry.FlowID))
+		} else {
+			rightView.WriteString("\nNo entries found.")
+		}
 	}
 
 	// Footer
-	footer := "\n\nHelp: ↑/↓: Navigate • d: Diagnostics • w: Which • q: Quit"
+	footer := "\n\nHelp: ↑/↓: Navigate • d: Diagnostics • f: Flow • w: Which • q: Quit"
 	if m.InputMode {
 		footer = fmt.Sprintf("\n\nSearch: %s", m.InputBuffer.View())
 	}

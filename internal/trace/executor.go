@@ -10,7 +10,23 @@ import (
 // RunTrace executes the shell trace command and returns the stderr pipe.
 func RunTrace(shell Shell) (io.ReadCloser, error) {
 	cmd := exec.Command("sh", "-c", shell.GetTraceCommand())
-	cmd.Env = os.Environ()
+	// Sanitize Environment:
+	// We want to trace how the PATH is constructed from configuration files,
+	// so we remove the inherited PATH to prevent the first script from being
+	// incorrectly attributed with all existing entries.
+	var env []string
+	for _, e := range os.Environ() {
+		// Filter out PATH, keeping others (TERM, USER, etc.)
+		if len(e) >= 5 && e[:5] == "PATH=" {
+			continue
+		}
+		env = append(env, e)
+	}
+	// Set a minimal standard PATH to ensure basic shell tools (like rm, mkdir, zsh itself) work.
+	// This forces the shell startup scripts to reconstruct the full user PATH.
+	env = append(env, "PATH=/usr/bin:/bin:/usr/sbin:/sbin")
+
+	cmd.Env = env
 	cmd.Env = append(cmd.Env, "PS4="+shell.GetPS4())
 
 	// We only care about stderr for the trace

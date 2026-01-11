@@ -17,16 +17,12 @@ type Parser struct {
 
 // NewParser creates a new Parser with the appropriate regex for the shell.
 func NewParser(shell Shell) *Parser {
-	// Pattern: ^\+* ?(.*?):(\d+)>(.*)
+	// Pattern: .*?\+ ?(.*?):(\d+)>(.*)
 	// Matches:
 	// + file:10>command
-	// ++ file:10>command (nested)
-	// Groups:
-	// 1: File
-	// 2: Line
-	// 3: Command
+	// ...garbage...+ file:10>command
 	return &Parser{
-		re: regexp.MustCompile(`^\+* ?(.*?):(\d+)>(.*)`),
+		re: regexp.MustCompile(`.*\+(?: )?([^:]+):(\d+)>(.*)`),
 	}
 }
 
@@ -61,30 +57,51 @@ func (p *Parser) Parse(r io.Reader) (chan model.TraceEvent, chan error) {
 				// The trace expands variables, so we see "PATH=/foo:/bar"
 
 				pathChange := ""
-				if strings.Contains(cmd, "PATH=") {
-					// Check if it's an assignment.
-					// Could be "export PATH=..." or just "PATH=..."
-					// Also watch out for "INFOPATH="
+				// Identify if this is a PATH assignment
+				var isPathChange bool
+				var value string
 
-					// Simple tokenization to be safer
-					tokens := strings.Fields(cmd)
-					isPathAssign := false
-					for _, token := range tokens {
-						if strings.HasPrefix(token, "PATH=") {
-							isPathAssign = true
-							// Extract the value
-							parts := strings.SplitN(token, "=", 2)
-							if len(parts) == 2 {
-								pathChange = cleanPathValue(parts[1])
+				// 1. Direct Assignment: PATH='...' or export PATH='...'
+				// Regex to capture value inside optional quotes.
+				// Handles: PATH=val, PATH='val', export PATH="val"
+				// Note: cmd is the rest of the trace line.
+				// We look for "PATH=" pattern.
+
+				// Find start of "PATH="
+				idx := strings.Index(cmd, "PATH=")
+				if idx != -1 {
+					// Safety check: Needs to be start of string or preceded by space/export
+					valid := false
+					if idx == 0 {
+						valid = true
+					} else if idx > 0 && (cmd[idx-1] == ' ' || strings.HasSuffix(cmd[:idx], "export ")) {
+						// Ensure it's not SOMEOTHERPATH=
+						if idx > 0 && cmd[idx-1] != ' ' {
+							// potential suffix match like MYPATH=
+							// Check character before
+							// If it was "export PATH=", preceding char is space.
+							// parsing "match whole word PATH" is tricky without regex.
+							// simpler: check if character before P is space or delimiter.
+							r := cmd[idx-1]
+							if r == ' ' || r == ';' {
+								valid = true
 							}
-							break
+						} else {
+							valid = true
 						}
 					}
-					// Handle "export PATH" separate from assignment
-					if !isPathAssign && strings.HasPrefix(cmd, "export PATH") && !strings.Contains(cmd, "=") {
-						// This is just 'export PATH' without assignment, ignore or track?
-						// Usually follows an assignment. Ignoring for diffs, but maybe relevant for flow.
+
+					if valid {
+						// Extract everything after PATH=
+						// Value might be quoted.
+						rhs := cmd[idx+5:]
+						value = cleanPathValue(rhs)
+						isPathChange = true
 					}
+				}
+
+				if isPathChange {
+					pathChange = value
 				}
 
 				event := model.TraceEvent{

@@ -79,15 +79,22 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.SelectedIdx--
 			}
 		case "down", "j":
-			if m.SelectedIdx < len(m.FilteredIndices)-1 {
+			// Dynamic limit based on mode
+			maxIdx := len(m.FilteredIndices) - 1
+			if m.ShowFlow {
+				maxIdx = len(m.TraceResult.FlowNodes) - 1
+			}
+			if m.SelectedIdx < maxIdx {
 				m.SelectedIdx++
 			}
 		case "d":
 			m.ShowDiagnostics = !m.ShowDiagnostics
-			m.ShowFlow = false // Mutually exclusive for now for simplicity
+			m.ShowFlow = false // Mutually exclusive for now
 		case "f":
 			m.ShowFlow = !m.ShowFlow
 			m.ShowDiagnostics = false
+			// Reset cursor to avoid out-of-bounds
+			m.SelectedIdx = 0
 		case "w":
 			m.InputMode = true
 			m.InputBuffer.Focus()

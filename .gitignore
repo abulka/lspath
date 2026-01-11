@@ -2,8 +2,4 @@
 lspath
 
 # lspath output
-verify_output_v2.json
-
-
-
-¡
+verify_output_*.json

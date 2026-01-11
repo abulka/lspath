@@ -17,21 +17,25 @@ func NewAnalyzer() *Analyzer {
 }
 
 func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
-	var entries []model.PathEntry
 	var flowNodes []model.ConfigNode
 	var lastFile string
 	var currentNode *model.ConfigNode
 	var lastPathStr string
+	// Track current attribution for each path entry string
+	// Map: PathString -> *PathEntry
+	// We need order too.
+	// Actually, just tracking the previous list of entries is enough?
+	// When PATH changes, we have a new list of strings.
+	// For each string in new list:
+	//   If it exists in old list (by value), reuse its attribution.
+	//   Else, attribute to current node.
 
-	// Helper to find if a path segment exists in current entries
-	findEntry := func(val string, currentEntries []model.PathEntry) *model.PathEntry {
-		for _, e := range currentEntries {
-			if e.Value == val {
-				return &e
-			}
-		}
-		return nil
-	}
+	// We need to be careful about duplicates. "A:B:A".
+	// If we reuse, we should reuse the *first* matching instance?
+	// Or simpler: Map Value -> Entry. But duplicates confuse map.
+
+	// Better: Maintain current list of `[]*model.PathEntry`.
+	var currentEntries []*model.PathEntry
 
 	nodeCounter := 0
 
@@ -56,52 +60,62 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 			lastFile = ev.File
 		}
 
+		// Check if this event changes PATH
 		if ev.PathChange != "" && ev.PathChange != lastPathStr {
-			// PATH changed. Re-calculate entries.
+			// Parse the new PATH string
 			newPaths := strings.Split(ev.PathChange, ":")
-			var newEntries []model.PathEntry
+			var newEntries []*model.PathEntry
 
-			// Clean paths (remove empty strings commonly at end of split if trailing :)
-			var cleanedPaths []string
+			// Build a pool of existing entries to reuse
+			// To handle duplicates and reordering correctly is tricky.
+			// Heuristic: If we see path "P" and we had "P" before, keep the old one.
+			// If we had multiple "P"s, which one? The first one?
+
+			// Optimization: Map[Value] -> *Entry (last seen or list?)
+			// Let's iterate.
+
 			for _, p := range newPaths {
-				if p != "" {
-					cleanedPaths = append(cleanedPaths, p)
+				if p == "" {
+					continue
 				}
-			}
-			newPaths = cleanedPaths
 
-			for _, pVal := range newPaths {
-				// Is this pVal in our existing entries?
-				existing := findEntry(pVal, entries)
+				// Is this p in currentEntries?
+				var existing *model.PathEntry
+				for _, curr := range currentEntries {
+					if curr.Value == p {
+						existing = curr
+						break
+					}
+				}
+
 				if existing != nil {
-					// Persist existing attribution
-					// Note: If the user explicitly re-adds it, does the attribution change?
-					// Typically "export PATH=$PATH:/foo" keeps existing attributes.
-					// If they "export PATH=/foo" (reset), then everything loses attribution except /foo.
-					// But usually we build up.
-					// If key is present, we keep usage of the *first* time it was seen?
-					// Or do we strictly respect the current placement?
-					// Let's keep the *original* attribution to show where it came from first.
-					newEntries = append(newEntries, *existing)
+					// Reuse
+					// Make a copy or point to same?
+					// If we point to same, we can't detect if it moved?
+					// We just want to preserve Source info.
+					e := *existing // shallow copy
+					// Update Mode? Mode comes later.
+					newEntries = append(newEntries, &e)
 				} else {
-					// It's new! Attribute to this event.
-					entry := model.PathEntry{
-						Value:      pVal,
+					// New Entry
+					e := model.PathEntry{
+						Value:      p,
 						SourceFile: ev.File,
 						LineNumber: ev.Line,
 						FlowID:     currentNode.ID,
 						Mode:       GuessShellMode(ev.File),
 					}
-					newEntries = append(newEntries, entry)
-					// Add to current node's contribution list
-					// (We can't add index yet because index changes, but we track count)
-					// Actually, we can just filter by FlowID later.
+					newEntries = append(newEntries, &e)
 				}
 			}
-
-			entries = newEntries
+			currentEntries = newEntries
 			lastPathStr = ev.PathChange
 		}
+	}
+
+	entries := make([]model.PathEntry, len(currentEntries))
+	for i, e := range currentEntries {
+		entries[i] = *e
 	}
 
 	// Post-process for Duplicates
