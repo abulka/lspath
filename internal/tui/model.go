@@ -16,8 +16,9 @@ type AppModel struct {
 	Err         error
 
 	// UI State
-	SelectedIdx int
-	WindowSize  tea.WindowSizeMsg
+	SelectedIdx     int
+	FlowSelectedIdx int // Index of selected flow node in Flow Mode
+	WindowSize      tea.WindowSizeMsg
 
 	// View Modes
 	ShowDiagnostics bool

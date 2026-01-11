@@ -75,26 +75,37 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "up", "k":
-			if m.SelectedIdx > 0 {
-				m.SelectedIdx--
+			if m.ShowFlow {
+				if m.FlowSelectedIdx > 0 {
+					m.FlowSelectedIdx--
+				}
+			} else {
+				if m.SelectedIdx > 0 {
+					m.SelectedIdx--
+				}
 			}
 		case "down", "j":
-			// Dynamic limit based on mode
-			maxIdx := len(m.FilteredIndices) - 1
 			if m.ShowFlow {
-				maxIdx = len(m.TraceResult.FlowNodes) - 1
-			}
-			if m.SelectedIdx < maxIdx {
-				m.SelectedIdx++
+				if m.FlowSelectedIdx < len(m.TraceResult.FlowNodes)-1 {
+					m.FlowSelectedIdx++
+				}
+			} else {
+				if m.SelectedIdx < len(m.FilteredIndices)-1 {
+					m.SelectedIdx++
+				}
 			}
 		case "d":
 			m.ShowDiagnostics = !m.ShowDiagnostics
-			m.ShowFlow = false // Mutually exclusive for now
+			m.ShowFlow = false
 		case "f":
 			m.ShowFlow = !m.ShowFlow
 			m.ShowDiagnostics = false
-			// Reset cursor to avoid out-of-bounds
-			m.SelectedIdx = 0
+			// Reset flow cursor if opening first time?
+			// Better to keep memory if re-toggling.
+			// Ensure bounds though?
+			if len(m.TraceResult.FlowNodes) > 0 && m.FlowSelectedIdx >= len(m.TraceResult.FlowNodes) {
+				m.FlowSelectedIdx = 0
+			}
 		case "w":
 			m.InputMode = true
 			m.InputBuffer.Focus()

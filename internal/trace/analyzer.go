@@ -42,22 +42,35 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 	for _, ev := range events {
 		// Flow Graph Construction
 		if ev.File != lastFile {
-			// New file context
-			// Check if we are returning to a previous stack?
-			// For now, assuming linear flow or nested.
-			// We'll simplisticly create a new node for every file switch
-			// to show the trace timeline.
+			// Check if this file is "noisy" (system functions)
+			// If it is, and it DOES NOT change the PATH, we skip creating a new node
+			// and attribute events to the previous node (effectively coalecsing).
+			// However, if it changes PATH, we MUST record it.
 
-			nodeCounter++
-			node := model.ConfigNode{
-				ID:       fmt.Sprintf("node-%d", nodeCounter),
-				FilePath: ev.File,
-				Order:    nodeCounter,
-				Entries:  []int{},
+			isSystem := strings.HasPrefix(ev.File, "/usr/share/zsh") || strings.HasPrefix(ev.File, "/etc/zshrc_Apple_Terminal")
+			isPathChange := (ev.PathChange != "")
+
+			if isSystem && !isPathChange {
+				// Skip creating a new node, stay on current.
+				// But update lastFile so we don't check this every event?
+				// No, if we update lastFile, next event will think we are in context.
+				// We just effectively "ignore" this switch.
+				// But wait, if we ignore the switch, ev.File is different.
+				// We should map this event to the *current* flow node.
+				// So we do nothing here.
+			} else {
+				// Create new node
+				nodeCounter++
+				node := model.ConfigNode{
+					ID:       fmt.Sprintf("node-%d", nodeCounter),
+					FilePath: ev.File,
+					Order:    nodeCounter,
+					Entries:  []int{},
+				}
+				flowNodes = append(flowNodes, node)
+				currentNode = &flowNodes[len(flowNodes)-1]
+				lastFile = ev.File
 			}
-			flowNodes = append(flowNodes, node)
-			currentNode = &flowNodes[len(flowNodes)-1]
-			lastFile = ev.File
 		}
 
 		// Check if this event changes PATH

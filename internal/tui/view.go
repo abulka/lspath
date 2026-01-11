@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -38,92 +39,161 @@ var (
 
 func (m AppModel) View() string {
 	if m.Loading {
-		return "\n  Scanning shell configuration... (running zsh -xli)\n"
+		return "\n  Scanning PATH trace... please wait.\n"
 	}
 	if m.Err != nil {
 		return fmt.Sprintf("\n  Error: %v\n", m.Err)
 	}
 
-	// Calculate Panel Widths
+	// Layout dimensions
 	width := m.WindowSize.Width
 	height := m.WindowSize.Height
-	if width == 0 {
-		width = 100
-	} // fallback
+	leftWidth := width / 2
+	rightWidth := width - leftWidth - 4 // borders/padding
 
-	halfWidth := width/2 - 2
+	// Styles
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57"))
+	dimmedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+	highlightStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true) // For matching flow items
 
 	// LEFT PANEL: PATH List
+	// Always filters by FilteredIndices
 	var leftView strings.Builder
+	leftView.WriteString(titleStyle.Render("PATH Entries"))
+	leftView.WriteString("\n\n")
 
-	if m.ShowFlow {
-		leftView.WriteString(titleStyle.Render("Configuration Flow"))
-		leftView.WriteString("\n\n")
-
-		for _, node := range m.TraceResult.FlowNodes {
-			name := node.FilePath
-			// Truncate home for readability
-			// Note: In a real app we'd import os but here just naive
-			// or assume full paths.
-			// We can use style for Order.
-			leftView.WriteString(unselectedItemStyle.Render(fmt.Sprintf("%d. %s", node.Order, name)))
-			leftView.WriteString("\n")
-		}
-	} else {
-		leftView.WriteString(titleStyle.Render("PATH Entries"))
-		leftView.WriteString("\n\n")
-
-		for i, idx := range m.FilteredIndices {
-			// Only render visible items if we had a proper viewport, but for now render all
-			// and let the term handle scrolling or limit to N.
-			// Actually rendering 100 lines might flicker without viewport.
-			// Let's implement primitive "windowing" based on SelectedIdx.
-			// Center around selected.
-
-			// Simple Viewport logic:
-			viewportHeight := height - 4
-			start := 0
-			if m.SelectedIdx > viewportHeight/2 {
-				start = m.SelectedIdx - viewportHeight/2
-			}
-			if i < start || i > start+viewportHeight {
-				continue
-			}
-
-			entry := m.TraceResult.PathEntries[idx]
-			cursor := " "
-			style := unselectedItemStyle
-			if i == m.SelectedIdx {
-				cursor = ">"
-				style = selectedItemStyle
-			}
-
-			// If search active and matched, maybe highlight?
-			// Currently FilteredIndices ONLY contains matches, so they are all matches.
-
-			leftView.WriteString(style.Render(fmt.Sprintf("%s %s", cursor, entry.Value)))
-			leftView.WriteString("\n")
-		}
+	// Determine current filtered FilterID if in Flow Mode
+	var activeFlowID string
+	if m.ShowFlow && len(m.TraceResult.FlowNodes) > 0 && m.FlowSelectedIdx < len(m.TraceResult.FlowNodes) {
+		activeFlowID = m.TraceResult.FlowNodes[m.FlowSelectedIdx].ID
 	}
 
-	// RIGHT PANEL: Details
+	// Windowing Logic for Left Panel
+	// To ensure the selected item is always visible.
+	visibleItems := height - 4 - 2 // Account for title and padding
+	if visibleItems < 0 {
+		visibleItems = 0
+	}
+	startIdx := 0
+	endIdx := len(m.FilteredIndices)
+
+	// Adjust window based on selection
+	if len(m.FilteredIndices) > visibleItems {
+		if m.SelectedIdx >= visibleItems/2 {
+			startIdx = m.SelectedIdx - (visibleItems / 2)
+		}
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		if startIdx+visibleItems > len(m.FilteredIndices) {
+			startIdx = len(m.FilteredIndices) - visibleItems
+		}
+		endIdx = startIdx + visibleItems
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		idx := m.FilteredIndices[i]
+		entry := m.TraceResult.PathEntries[idx]
+
+		line := fmt.Sprintf("%d. %s", idx+1, entry.Value)
+		// Truncate
+		if len(line) > leftWidth-2 {
+			line = line[:leftWidth-2] + "…"
+		}
+
+		// Styling logic
+		var style lipgloss.Style
+		isRowSelected := (i == m.SelectedIdx)
+
+		if m.ShowFlow {
+			if entry.FlowID == activeFlowID {
+				if isRowSelected {
+					style = selectedStyle
+				} else {
+					style = highlightStyle
+				}
+			} else {
+				// Dimmed
+				if isRowSelected {
+					style = selectedStyle // Selection always visible
+				} else {
+					style = dimmedStyle
+				}
+			}
+		} else {
+			// Normal Mode
+			if isRowSelected {
+				style = selectedStyle
+			} else {
+				style = normalStyle
+			}
+		}
+
+		leftView.WriteString(style.Render(line))
+		leftView.WriteString("\n")
+	}
+
+	left := lipgloss.NewStyle().
+		Width(leftWidth).
+		Height(height - 4).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("63")).
+		Render(leftView.String())
+
+	// RIGHT PANEL: Details OR Flow List
 	var rightView strings.Builder
 
-	// Header
-	rightView.WriteString(titleStyle.Render("Details"))
-	rightView.WriteString("\n")
-
 	if m.ShowFlow {
-		// Flow Mode Details
-		// Show info about the selected node?
-		// We don't have interactive flow selection yet, just a list.
-		// So just explain what Flow Mode is.
-		rightView.WriteString("\nShowing configuration loading sequence.")
-		rightView.WriteString("\n\nThis list shows the order in which")
-		rightView.WriteString("\nfiles were sourced by the shell.")
-		rightView.WriteString("\n\n(Select a file to see details - Coming Soon)")
+		// FLOW MODE
+		rightView.WriteString(titleStyle.Render("Configuration Flow"))
+		rightView.WriteString("\n\n")
+
+		// Windowing for Right Panel
+		visibleItems := height - 4
+		startIdx := 0
+		endIdx := len(m.TraceResult.FlowNodes)
+
+		if len(m.TraceResult.FlowNodes) > visibleItems {
+			if m.FlowSelectedIdx >= visibleItems/2 {
+				startIdx = m.FlowSelectedIdx - (visibleItems / 2)
+			}
+			if startIdx < 0 {
+				startIdx = 0
+			}
+			if startIdx+visibleItems > len(m.TraceResult.FlowNodes) {
+				startIdx = len(m.TraceResult.FlowNodes) - visibleItems
+			}
+			endIdx = startIdx + visibleItems
+		}
+
+		for i := startIdx; i < endIdx; i++ {
+			node := m.TraceResult.FlowNodes[i]
+			name := node.FilePath
+			// Truncate home for readability
+			if strings.HasPrefix(name, os.Getenv("HOME")) {
+				name = "~" + strings.TrimPrefix(name, os.Getenv("HOME"))
+			}
+
+			line := fmt.Sprintf("%d. %s", node.Order, name)
+			// Truncate width
+			if len(line) > rightWidth-2 {
+				line = line[:rightWidth-2] + "…"
+			}
+
+			if i == m.FlowSelectedIdx {
+				rightView.WriteString(selectedStyle.Render(line))
+			} else {
+				rightView.WriteString(normalStyle.Render(line))
+			}
+			rightView.WriteString("\n")
+		}
 	} else {
-		// PATH Mode Details
+		// NORMAL MODE: Details
+		rightView.WriteString(titleStyle.Render("Details"))
+		rightView.WriteString("\n")
+
 		if len(m.FilteredIndices) > 0 && m.SelectedIdx < len(m.FilteredIndices) {
 			idx := m.FilteredIndices[m.SelectedIdx]
 			entry := m.TraceResult.PathEntries[idx]
@@ -152,15 +222,29 @@ func (m AppModel) View() string {
 		}
 	}
 
+	// Viewport for right panel content?
+	// m.DetailsViewport.SetContent(rightView.String())
+	// Actually, simple resize render is easier for now than managing viewport scrolling for both modes.
+	// Just rendering string is safer unless content overflows.
+	// Assuming content fits for now.
+
+	right := lipgloss.NewStyle().
+		Width(rightWidth).
+		Height(height - 4).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("63")).
+		Render(rightView.String())
+
 	// Footer
-	footer := "\n\nHelp: ↑/↓: Navigate • d: Diagnostics • f: Flow • w: Which • q: Quit"
+	help := "Help: ↑/↓: Navigate • d: Diagnostics • f: Flow • w: Which • q: Quit"
+	if m.ShowFlow {
+		help = "Flow Mode: ↑/↓: Select Config File • f: Return to Path List • q: Quit"
+	}
+
+	footer := "\n\n" + help
 	if m.InputMode {
 		footer = fmt.Sprintf("\n\nSearch: %s", m.InputBuffer.View())
 	}
-
-	// Combine
-	left := lipgloss.NewStyle().Width(halfWidth).Render(leftView.String())
-	right := detailStyle.Width(halfWidth).Height(height - 4).Render(rightView.String())
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right) + footer
 }
