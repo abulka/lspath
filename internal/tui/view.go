@@ -311,9 +311,9 @@ func (m AppModel) View() string {
 		Render(rightView.String())
 
 	// Footer
-	help := "Help: ↑/↓: Navigate • d: Diagnostics • f: Flow • w: Which • q: Quit"
+	help := "Help: ↑/↓: Navigate • d: Diagnostics • f/F: Flow • w: Which • q: Quit"
 	if m.ShowFlow {
-		help = "Flow Mode: ↑/↓: Select Config File • f: Return to Path List • q: Quit"
+		help = "Flow Mode: ↑/↓: Select Config File • f: Return to Path List • F: Toggle Cumulative • q: Quit"
 	}
 
 	footer := "\n\n" + help

@@ -73,6 +73,21 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "esc":
+			// Global ESC handler
+			if m.SearchActive {
+				m.InputMode = false
+				m.InputBuffer.Blur()
+				m.SearchActive = false
+				m.InputBuffer.SetValue("")
+				m.performSearch()
+				return m, nil
+			}
+			if m.ShowFlow {
+				m.ShowFlow = false
+				m.CumulativeFlow = false
+				return m, nil
+			}
 		case "up", "k":
 			if m.ShowFlow {
 				if m.FlowSelectedIdx > 0 {
