@@ -70,7 +70,7 @@ func (p *Parser) Parse(r io.Reader) (chan model.TraceEvent, chan error) {
 					tokens := strings.Fields(cmd)
 					isPathAssign := false
 					for _, token := range tokens {
-						if strings.HasPrefix(token, "PATH=") || (strings.Contains(token, "PATH=") && !strings.Contains(token, "INFOPATH") && !strings.Contains(token, "MANPATH")) {
+						if strings.HasPrefix(token, "PATH=") {
 							isPathAssign = true
 							// Extract the value
 							parts := strings.SplitN(token, "=", 2)

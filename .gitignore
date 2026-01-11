@@ -1,0 +1,9 @@
+# go project .gitignore
+lspath
+
+# lspath output
+verify_output_v2.json
+
+
+
+¡
