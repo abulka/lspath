@@ -37,6 +37,9 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 	// Better: Maintain current list of `[]*model.PathEntry`.
 	var currentEntries []*model.PathEntry
 
+	// Stack tracking for indentation
+	var fileStack []string
+
 	nodeCounter := 0
 
 	for _, ev := range events {
@@ -59,12 +62,43 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 				// We should map this event to the *current* flow node.
 				// So we do nothing here.
 			} else {
+				// Stack Logic:
+				// If new file is in current stack, it means we returned to it (Pop).
+				// If not, we are sourcing a new file (Push).
+
+				// Initialize stack if empty (first node)
+				// Actually `lastFile` was the top of stack.
+
+				// Find ev.File in stack
+				foundIdx := -1
+				for i := len(fileStack) - 1; i >= 0; i-- {
+					if fileStack[i] == ev.File {
+						foundIdx = i
+						break
+					}
+				}
+
+				if foundIdx != -1 {
+					// Returned to previous file -> Pop stack down to this file
+					fileStack = fileStack[:foundIdx+1]
+				} else {
+					// New file -> Push
+					fileStack = append(fileStack, ev.File)
+				}
+
+				// Current depth is len(stack) - 1
+				depth := len(fileStack) - 1
+				if depth < 0 {
+					depth = 0
+				}
+
 				// Create new node
 				nodeCounter++
 				node := model.ConfigNode{
 					ID:       fmt.Sprintf("node-%d", nodeCounter),
 					FilePath: ev.File,
 					Order:    nodeCounter,
+					Depth:    depth,
 					Entries:  []int{},
 				}
 				flowNodes = append(flowNodes, node)

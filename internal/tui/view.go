@@ -108,7 +108,7 @@ func (m AppModel) View() string {
 		isRowSelected := (i == m.SelectedIdx)
 
 		if m.ShowFlow {
-			if entry.SourceFile == activeFlowPath {
+			if strings.EqualFold(strings.TrimSpace(entry.SourceFile), strings.TrimSpace(activeFlowPath)) {
 				if isRowSelected {
 					style = selectedStyle
 				} else {
@@ -168,6 +168,18 @@ func (m AppModel) View() string {
 			endIdx = startIdx + visibleItems
 		}
 
+		// Pre-calculate seen counts to identify duplicates/continuations
+		// We can't just check 'seen' in the render loop because of windowing (we might skip the first occurrence).
+		// So we need a global map of "Order -> IsContinuation".
+		isContinuation := make(map[int]bool)
+		seenPath := make(map[string]bool)
+		for _, n := range m.TraceResult.FlowNodes {
+			if seenPath[n.FilePath] {
+				isContinuation[n.Order] = true
+			}
+			seenPath[n.FilePath] = true
+		}
+
 		for i := startIdx; i < endIdx; i++ {
 			node := m.TraceResult.FlowNodes[i]
 			name := node.FilePath
@@ -176,7 +188,35 @@ func (m AppModel) View() string {
 				name = "~" + strings.TrimPrefix(name, os.Getenv("HOME"))
 			}
 
-			line := fmt.Sprintf("%d. %s", node.Order, name)
+			// Indentation
+			indent := strings.Repeat("  ", node.Depth)
+			// prefix := ""
+			// if node.Depth > 0 {
+			//     prefix = "└─ "
+			// }
+
+			// Maybe just spaces?
+			// "  .zshrc"
+			// "    nvm.sh"
+			// "  .zshrc"
+			// The user wants to understand duplication.
+			// If I see:
+			// .zshrc
+			//   nvm.sh
+			// .zshrc
+			// It visually implies return.
+
+			// indent = strings.Repeat("  ", node.Depth) // This line is redundant as indent is already calculated above
+
+			suffix := ""
+			if isContinuation[node.Order] {
+				// We can keep this or remove it. "cont" is still helpful text.
+				suffix = " (cont.)"
+			}
+			// Actually, if indented back out, it's obvious.
+			// But let's keep suffix for now as "extra" clarity.
+
+			line := fmt.Sprintf("%d. %s%s%s", node.Order, indent, name, suffix)
 			// Truncate width
 			if len(line) > rightWidth-2 {
 				line = line[:rightWidth-2] + "…"

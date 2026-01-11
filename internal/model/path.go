@@ -29,6 +29,7 @@ type ConfigNode struct {
 	ID       string // e.g. "node-1"
 	FilePath string // e.g. "/etc/zshenv"
 	Order    int    // Sequence order (1, 2, 3...)
+	Depth    int    // Stack depth (indentation level)
 	Entries  []int  // Indices of PathEntries contributed by this node
 }
 
