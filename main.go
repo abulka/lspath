@@ -15,12 +15,33 @@ import (
 )
 
 func main() {
-	jsonFlag := flag.Bool("json", false, "Output analysis as JSON")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: lspath [options]\n\n")
+		fmt.Fprintf(os.Stderr, "lspath is a tool for analyzing and debugging your system PATH.\n")
+		fmt.Fprintf(os.Stderr, "By default, it starts in TUI mode for interactive exploration.\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  lspath              # Start TUI mode\n")
+		fmt.Fprintf(os.Stderr, "  lspath --report    # Print a compact diagnostic report to stdout\n")
+		fmt.Fprintf(os.Stderr, "  lspath --report -o r.txt   # Save report to a file\n")
+		fmt.Fprintf(os.Stderr, "  lspath --json      # Output raw analysis data as JSON\n")
+	}
+
+	jsonFlag := flag.Bool("json", false, "Output raw analysis data as JSON")
+	reportFlag := flag.Bool("report", false, "Generate a detailed diagnostic report (CLI mode)")
+	outputFlag := flag.String("o", "", "Save report to the specified file (combined with --report)")
+	verboseFlag := flag.Bool("verbose", false, "Include detailed internal model data in the report")
 	webFlag := flag.Bool("w", false, "Start Web Mode (not implemented)")
 	flag.Parse()
 
 	if *webFlag {
 		web.StartServer()
+		return
+	}
+
+	if *reportFlag {
+		runReportMode(*outputFlag, *verboseFlag)
 		return
 	}
 
@@ -31,6 +52,41 @@ func main() {
 
 	// Default: TUI
 	runTuiMode()
+}
+
+func runReportMode(outputFile string, verbose bool) {
+	shell := trace.DetectShell(os.Getenv("SHELL"))
+	stderr, err := trace.RunTrace(shell)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error running trace: %v\n", err)
+		os.Exit(1)
+	}
+
+	parser := trace.NewParser(shell)
+	events, errs := parser.Parse(stderr)
+	var allEvents []model.TraceEvent
+	for ev := range events {
+		allEvents = append(allEvents, ev)
+	}
+	go func() {
+		for range errs {
+		}
+	}()
+
+	analyzer := trace.NewAnalyzer()
+	result := analyzer.Analyze(allEvents)
+	report := trace.GenerateReport(result, verbose)
+
+	if outputFile != "" {
+		err := os.WriteFile(outputFile, []byte(report), 0644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing report to %s: %v\n", outputFile, err)
+			os.Exit(1)
+		}
+		fmt.Printf("Report saved to %s\n", outputFile)
+	} else {
+		fmt.Println(report)
+	}
 }
 
 func runJsonMode() {

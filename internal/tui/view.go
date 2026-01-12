@@ -699,7 +699,65 @@ func (m AppModel) View() string {
 	if m.ShowHelp {
 		return m.renderHelpDialog()
 	}
+	if m.ShowDiagnosticsPopup {
+		return m.renderDiagnosticsPopup()
+	}
 	return mainView
+}
+
+func (m *AppModel) renderDiagnosticsPopup() string {
+	w, h := m.WindowSize.Width, m.WindowSize.Height
+	if w < 20 || h < 10 {
+		return "Window too small"
+	}
+
+	popupWidth := w * 90 / 100
+	if popupWidth < 40 {
+		popupWidth = 40
+	}
+	if popupWidth > w-4 {
+		popupWidth = w - 4
+	}
+	popupHeight := h - 6
+	if popupHeight < 5 {
+		popupHeight = 5
+	}
+
+	lines := strings.Split(m.DiagnosticsReport, "\n")
+	contentHeight := popupHeight - 4 // minus border and footer
+
+	startY := m.DiagnosticsScrollY
+	if startY > len(lines)-contentHeight {
+		startY = len(lines) - contentHeight
+	}
+	if startY < 0 {
+		startY = 0
+	}
+	m.DiagnosticsScrollY = startY
+
+	endY := startY + contentHeight
+	if endY > len(lines) {
+		endY = len(lines)
+	}
+
+	visibleLines := lines[startY:endY]
+	content := strings.Join(visibleLines, "\n")
+
+	title := titleStyle.Render("Global Diagnostics Report")
+	footer := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("\nPress 's' to save report, 'v' to toggle verbose, 'd' or 'Esc' to close")
+
+	dialog := lipgloss.NewStyle().
+		Width(popupWidth).
+		Height(popupHeight).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("208")). // Orange
+		Padding(0, 1).
+		Render(title + "\n\n" + content + footer)
+
+	return lipgloss.Place(w, h,
+		lipgloss.Center, lipgloss.Center,
+		dialog,
+	)
 }
 
 func (m *AppModel) renderHelpDialog() string {
@@ -708,7 +766,10 @@ func (m *AppModel) renderHelpDialog() string {
 		return "Window too small"
 	}
 
-	helpWidth := 70
+	helpWidth := w * 80 / 100
+	if helpWidth < 40 {
+		helpWidth = 40
+	}
 	if helpWidth > w-4 {
 		helpWidth = w - 4
 	}

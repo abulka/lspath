@@ -12,7 +12,8 @@ type PathEntry struct {
 	Remediation string   // Advice on how to fix/remove if duplicate
 
 	// Flow Attribution
-	FlowID string // ID of the ConfigNode this belongs to
+	FlowID      string   // ID of the ConfigNode this belongs to
+	Diagnostics []string // List of issues (e.g., missing directory)
 }
 
 // TraceEvent represents a single line of debug output from the shell.
@@ -33,6 +34,7 @@ type ConfigNode struct {
 	Depth       int    // Stack depth (indentation level)
 	Entries     []int  // Indices of PathEntries contributed by this node
 	NotExecuted bool   // True if this file was inserted as a placeholder
+	Description string // Descriptive label (e.g., "(system-wide)")
 }
 
 // AnalysisResult contains the processed data from a trace.

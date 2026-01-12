@@ -57,6 +57,12 @@ type AppModel struct {
 	ShowHelp    bool
 	HelpScrollY int
 	HelpContent string
+
+	// Diagnostics Popup State
+	ShowDiagnosticsPopup bool
+	DiagnosticsScrollY   int
+	DiagnosticsReport    string
+	DiagnosticsVerbose   bool
 }
 
 const (

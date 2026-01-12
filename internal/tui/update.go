@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"lspath/internal/model"
 	"lspath/internal/trace"
@@ -35,6 +36,9 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MsgTraceReady:
 		m.Loading = false
 		m.TraceResult = model.AnalysisResult(msg)
+		// Generate global report
+		m.DiagnosticsReport = trace.GenerateReport(m.TraceResult, m.DiagnosticsVerbose)
+
 		// Auto-populate filtered indices with all
 		m.FilteredIndices = make([]int, len(m.TraceResult.PathEntries))
 		for i := range m.TraceResult.PathEntries {
@@ -76,7 +80,7 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.ShowHelp {
 			switch msg.String() {
-			case "?", "esc", "q":
+			case "?", "h", "esc", "q":
 				m.ShowHelp = false
 				return m, nil
 			case "up", "k":
@@ -85,27 +89,110 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "down", "j":
 				m.HelpScrollY++
-			case "pgup", "ctrl+u", "ctrl+b":
+			case "pgdown", "ctrl+d", "ctrl+f", " ":
+				m.HelpScrollY += 10
+			case "pgup", "ctrl+u", "ctrl+b", "b":
 				if m.HelpScrollY > 10 {
 					m.HelpScrollY -= 10
 				} else {
 					m.HelpScrollY = 0
 				}
-			case "pgdown", "ctrl+d", "ctrl+f":
-				m.HelpScrollY += 10
 			case "home", "g":
 				m.HelpScrollY = 0
 			case "end", "G":
-				// Approximate end scroll for now, view.go will cap it
-				m.HelpScrollY = 100
+				m.HelpScrollY = 1000 // Just a high number, we cap below
 			}
+
+			// Robust Capping for Help
+			helpLines := strings.Split(m.HelpContent, "\n")
+			maxHelpScroll := len(helpLines) - (m.WindowSize.Height - 8)
+			if maxHelpScroll < 0 {
+				maxHelpScroll = 0
+			}
+			if m.HelpScrollY > maxHelpScroll {
+				m.HelpScrollY = maxHelpScroll
+			}
+			if m.HelpScrollY < 0 {
+				m.HelpScrollY = 0
+			}
+
+			return m, nil
+		}
+
+		if m.ShowDiagnosticsPopup {
+			switch msg.String() {
+			case "d", "esc", "q":
+				m.ShowDiagnosticsPopup = false
+				return m, nil
+			case "up", "k":
+				if m.DiagnosticsScrollY > 0 {
+					m.DiagnosticsScrollY--
+				}
+			case "down", "j":
+				m.DiagnosticsScrollY++
+			case "pgup", "ctrl+u", "ctrl+b", "b":
+				if m.DiagnosticsScrollY > 10 {
+					m.DiagnosticsScrollY -= 10
+				} else {
+					m.DiagnosticsScrollY = 0
+				}
+			case "pgdown", "ctrl+d", "ctrl+f", " ":
+				m.DiagnosticsScrollY += 10
+			case "home", "g":
+				m.DiagnosticsScrollY = 0
+			case "end", "G":
+				m.DiagnosticsScrollY = 1000 // High number, capped below
+			case "v":
+				m.DiagnosticsVerbose = !m.DiagnosticsVerbose
+				m.DiagnosticsReport = trace.GenerateReport(m.TraceResult, m.DiagnosticsVerbose)
+			case "s":
+				timestamp := time.Now().Format("2006-01-02-15-04-05")
+				filename := fmt.Sprintf("lspath-report-%s.txt", timestamp)
+				_ = os.WriteFile(filename, []byte(m.DiagnosticsReport), 0644)
+			}
+
+			// Robust Capping for Diagnostics
+			diagLines := strings.Split(m.DiagnosticsReport, "\n")
+			maxDiagScroll := len(diagLines) - (m.WindowSize.Height - 10) // 10 matches view.go popupHeight - 4
+			if maxDiagScroll < 0 {
+				maxDiagScroll = 0
+			}
+			if m.DiagnosticsScrollY > maxDiagScroll {
+				m.DiagnosticsScrollY = maxDiagScroll
+			}
+			if m.DiagnosticsScrollY < 0 {
+				m.DiagnosticsScrollY = 0
+			}
+
 			return m, nil
 		}
 
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "?":
+		case " ":
+			// Spacebar global page down logic
+			if m.ShowFlow {
+				if m.RightPanelFocus == FocusFilePreview {
+					m.PreviewScrollY += 10
+				} else {
+					m.FlowSelectedIdx += 10
+					if m.FlowSelectedIdx >= len(m.TraceResult.FlowNodes) {
+						m.FlowSelectedIdx = len(m.TraceResult.FlowNodes) - 1
+					}
+				}
+			} else if m.NormalRightFocus {
+				m.DetailsScrollY += 10
+			} else {
+				// PATH list paging
+				m.SelectedIdx += 10
+				if m.SelectedIdx >= len(m.FilteredIndices) {
+					m.SelectedIdx = len(m.FilteredIndices) - 1
+				}
+				m.loadDirectoryListing()
+			}
+			return m, nil
+		case "?", "h":
 			m.ShowHelp = true
 			m.HelpScrollY = 0
 			return m, nil
@@ -172,8 +259,8 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		case "pgup":
-			// Page up in preview
+		case "pgup", "ctrl+u", "ctrl+b", "b":
+			// Page up
 			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
 				if m.PreviewScrollY > 10 {
 					m.PreviewScrollY -= 10
@@ -186,57 +273,27 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.DetailsScrollY = 0
 				}
+			} else if !m.ShowFlow && !m.NormalRightFocus {
+				// Page up LHS PATH list
+				m.SelectedIdx -= 10
+				if m.SelectedIdx < 0 {
+					m.SelectedIdx = 0
+				}
+				m.loadDirectoryListing()
 			}
-		case "pgdown":
-			// Page down in preview
+		case "pgdown", "ctrl+d", "ctrl+f":
+			// Page down
 			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
 				m.PreviewScrollY += 10
 			} else if !m.ShowFlow && m.NormalRightFocus {
 				m.DetailsScrollY += 10
-			}
-		case "ctrl+d":
-			// Vim: half page down
-			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
-				m.PreviewScrollY += 5
-			} else if !m.ShowFlow && m.NormalRightFocus {
-				m.DetailsScrollY += 5
-			}
-		case "ctrl+u":
-			// Vim: half page up
-			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
-				if m.PreviewScrollY > 5 {
-					m.PreviewScrollY -= 5
-				} else {
-					m.PreviewScrollY = 0
+			} else if !m.ShowFlow && !m.NormalRightFocus {
+				// Page down LHS PATH list
+				m.SelectedIdx += 10
+				if m.SelectedIdx >= len(m.FilteredIndices) {
+					m.SelectedIdx = len(m.FilteredIndices) - 1
 				}
-			} else if !m.ShowFlow && m.NormalRightFocus {
-				if m.DetailsScrollY > 5 {
-					m.DetailsScrollY -= 5
-				} else {
-					m.DetailsScrollY = 0
-				}
-			}
-		case "ctrl+f":
-			// Vim: full page down
-			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
-				m.PreviewScrollY += 10
-			} else if !m.ShowFlow && m.NormalRightFocus {
-				m.DetailsScrollY += 10
-			}
-		case "ctrl+b":
-			// Vim: full page up
-			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
-				if m.PreviewScrollY > 10 {
-					m.PreviewScrollY -= 10
-				} else {
-					m.PreviewScrollY = 0
-				}
-			} else if !m.ShowFlow && m.NormalRightFocus {
-				if m.DetailsScrollY > 10 {
-					m.DetailsScrollY -= 10
-				} else {
-					m.DetailsScrollY = 0
-				}
+				m.loadDirectoryListing()
 			}
 		case "home", "g":
 			// Jump to top of preview
@@ -269,25 +326,14 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.PreviewScrollY = lastLinePos
 				}
 			} else if !m.ShowFlow && m.NormalRightFocus {
-				// Get RHS content to calculate lines
-				// Note: We don't have a direct "DetailsContent" field, it's built in View()
-				// However, the main part that scrolls is DirectoryListing.
-				// We can approximate or just look at DirectoryListing if it's significant.
-				// Actually, View() uses strings.Split(finalRightViewContent, "\n")
-				// We can reconstruct it or just use a large number if we don't want to re-render.
-				// Re-calculating lines here:
 				lines := strings.Split(m.DirectoryListing, "\n")
-				// Headers add ~8-10 lines
-				totalLines := len(lines) + 10
+				totalLines := len(lines) + 12 // Approx overhead
 				interiorHeight := m.WindowSize.Height - 8
-				if interiorHeight < 1 {
-					interiorHeight = 1
+				max := totalLines - interiorHeight
+				if max < 0 {
+					max = 0
 				}
-				lastLinePos := totalLines - interiorHeight
-				if lastLinePos < 0 {
-					lastLinePos = 0
-				}
-				m.DetailsScrollY = lastLinePos
+				m.DetailsScrollY = max
 			}
 		case "tab":
 			// Tab switches focus
@@ -301,18 +347,16 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.NormalRightFocus = !m.NormalRightFocus
 			}
 		case "d":
-			m.ShowDiagnostics = !m.ShowDiagnostics
-			m.ShowFlow = false
+			m.ShowDiagnosticsPopup = true
+			m.DiagnosticsScrollY = 0
+			return m, nil
 		case "f":
 			m.ShowFlow = !m.ShowFlow
-			m.CumulativeFlow = false // Reset cumulative on toggle? Or persist?
-			// Reset to Specific mode when entering normally.
+			m.CumulativeFlow = false
 			m.ShowDiagnostics = false
-			// Reset flow cursor if opening first time?
 			if len(m.TraceResult.FlowNodes) > 0 && m.FlowSelectedIdx >= len(m.TraceResult.FlowNodes) {
 				m.FlowSelectedIdx = 0
 			}
-			// Load file when entering flow mode
 			if m.ShowFlow {
 				m.loadSelectedFile()
 			}
@@ -323,14 +367,77 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ShowFlow = true
 				m.ShowDiagnostics = false
 				m.loadSelectedFile()
-			} else {
-				// If turning off cumulative, stay in flow mode?
 			}
 		case "w":
 			m.InputMode = true
 			m.InputBuffer.Focus()
 			m.InputBuffer.SetValue("")
 			return m, textinput.Blink
+		}
+	}
+
+	// GLOBAL SCROLL CAPPING
+	// Help
+	if m.ShowHelp {
+		lines := strings.Split(m.HelpContent, "\n")
+		max := len(lines) - (m.WindowSize.Height - 8)
+		if max < 0 {
+			max = 0
+		}
+		if m.HelpScrollY > max {
+			m.HelpScrollY = max
+		}
+		if m.HelpScrollY < 0 {
+			m.HelpScrollY = 0
+		}
+	}
+
+	// Diagnostics
+	if m.ShowDiagnosticsPopup {
+		lines := strings.Split(m.DiagnosticsReport, "\n")
+		max := len(lines) - (m.WindowSize.Height - 10)
+		if max < 0 {
+			max = 0
+		}
+		if m.DiagnosticsScrollY > max {
+			m.DiagnosticsScrollY = max
+		}
+		if m.DiagnosticsScrollY < 0 {
+			m.DiagnosticsScrollY = 0
+		}
+	}
+
+	// Preview
+	if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+		lines := strings.Split(m.PreviewContent, "\n")
+		contentHeight := m.WindowSize.Height - 10
+		visibleHeight := (contentHeight - contentHeight/2) - 1
+		max := len(lines) - visibleHeight
+		if max < 0 {
+			max = 0
+		}
+		if m.PreviewScrollY > max {
+			m.PreviewScrollY = max
+		}
+		if m.PreviewScrollY < 0 {
+			m.PreviewScrollY = 0
+		}
+	}
+
+	// Details
+	if !m.ShowFlow && m.NormalRightFocus {
+		lines := strings.Split(m.DirectoryListing, "\n")
+		totalLines := len(lines) + 12 // Approx overhead
+		interiorHeight := m.WindowSize.Height - 8
+		max := totalLines - interiorHeight
+		if max < 0 {
+			max = 0
+		}
+		if m.DetailsScrollY > max {
+			m.DetailsScrollY = max
+		}
+		if m.DetailsScrollY < 0 {
+			m.DetailsScrollY = 0
 		}
 	}
 
