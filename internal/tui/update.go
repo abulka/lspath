@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 
 	"lspath/internal/model"
 	"lspath/internal/trace"
@@ -21,7 +22,7 @@ type MsgTraceReady model.AnalysisResult
 type MsgError error
 
 // Update handles events.
-func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
@@ -41,6 +42,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if len(m.FilteredIndices) > 0 {
 			m.SelectedIdx = 0
+			m.loadDirectoryListing()
 		}
 		return m, nil
 
@@ -105,8 +107,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			} else {
-				if m.SelectedIdx > 0 {
-					m.SelectedIdx--
+				if m.NormalRightFocus {
+					if m.DetailsScrollY > 0 {
+						m.DetailsScrollY--
+					}
+				} else {
+					if m.SelectedIdx > 0 {
+						m.SelectedIdx--
+						m.loadDirectoryListing()
+					}
 				}
 			}
 		case "down", "j":
@@ -122,14 +131,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			} else {
-				if m.SelectedIdx < len(m.FilteredIndices)-1 {
-					m.SelectedIdx++
+				if m.NormalRightFocus {
+					m.DetailsScrollY++
+				} else {
+					if m.SelectedIdx < len(m.FilteredIndices)-1 {
+						m.SelectedIdx++
+						m.loadDirectoryListing()
+					}
 				}
-			}
-		case "pgdown":
-			// Page down in preview
-			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
-				m.PreviewScrollY += 10
 			}
 		case "pgup":
 			// Page up in preview
@@ -139,11 +148,26 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.PreviewScrollY = 0
 				}
+			} else if !m.ShowFlow && m.NormalRightFocus {
+				if m.DetailsScrollY > 10 {
+					m.DetailsScrollY -= 10
+				} else {
+					m.DetailsScrollY = 0
+				}
+			}
+		case "pgdown":
+			// Page down in preview
+			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
+				m.PreviewScrollY += 10
+			} else if !m.ShowFlow && m.NormalRightFocus {
+				m.DetailsScrollY += 10
 			}
 		case "ctrl+d":
 			// Vim: half page down
 			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
 				m.PreviewScrollY += 5
+			} else if !m.ShowFlow && m.NormalRightFocus {
+				m.DetailsScrollY += 5
 			}
 		case "ctrl+u":
 			// Vim: half page up
@@ -153,11 +177,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.PreviewScrollY = 0
 				}
+			} else if !m.ShowFlow && m.NormalRightFocus {
+				if m.DetailsScrollY > 5 {
+					m.DetailsScrollY -= 5
+				} else {
+					m.DetailsScrollY = 0
+				}
 			}
 		case "ctrl+f":
 			// Vim: full page down
 			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
 				m.PreviewScrollY += 10
+			} else if !m.ShowFlow && m.NormalRightFocus {
+				m.DetailsScrollY += 10
 			}
 		case "ctrl+b":
 			// Vim: full page up
@@ -167,11 +199,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.PreviewScrollY = 0
 				}
+			} else if !m.ShowFlow && m.NormalRightFocus {
+				if m.DetailsScrollY > 10 {
+					m.DetailsScrollY -= 10
+				} else {
+					m.DetailsScrollY = 0
+				}
 			}
 		case "home", "g":
 			// Jump to top of preview
 			if m.ShowFlow && m.RightPanelFocus == FocusFilePreview {
 				m.PreviewScrollY = 0
+			} else if !m.ShowFlow && m.NormalRightFocus {
+				m.DetailsScrollY = 0
 			}
 		case "end", "G":
 			// Jump to end of preview - show last page
@@ -180,9 +220,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				lines := strings.Split(m.PreviewContent, "\n")
 				if len(lines) > 0 {
 					// Calculate visible height (matches view.go logic)
-					// contentHeight = height - 8
-					// topH = contentHeight / 2
-					// botH = contentHeight - topH - 1
 					contentHeight := m.WindowSize.Height - 10
 					topH := contentHeight / 2
 					botH := contentHeight - topH
@@ -192,22 +229,44 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						visibleHeight = 1
 					}
 
-					// Set scroll to show last page: position where last line is at bottom
+					// Set scroll to show last page
 					lastLinePos := len(lines) - visibleHeight
 					if lastLinePos < 0 {
 						lastLinePos = 0
 					}
 					m.PreviewScrollY = lastLinePos
 				}
+			} else if !m.ShowFlow && m.NormalRightFocus {
+				// Get RHS content to calculate lines
+				// Note: We don't have a direct "DetailsContent" field, it's built in View()
+				// However, the main part that scrolls is DirectoryListing.
+				// We can approximate or just look at DirectoryListing if it's significant.
+				// Actually, View() uses strings.Split(finalRightViewContent, "\n")
+				// We can reconstruct it or just use a large number if we don't want to re-render.
+				// Re-calculating lines here:
+				lines := strings.Split(m.DirectoryListing, "\n")
+				// Headers add ~8-10 lines
+				totalLines := len(lines) + 10
+				interiorHeight := m.WindowSize.Height - 8
+				if interiorHeight < 1 {
+					interiorHeight = 1
+				}
+				lastLinePos := totalLines - interiorHeight
+				if lastLinePos < 0 {
+					lastLinePos = 0
+				}
+				m.DetailsScrollY = lastLinePos
 			}
 		case "tab":
-			// Tab switches focus in flow mode
+			// Tab switches focus
 			if m.ShowFlow {
 				if m.RightPanelFocus == FocusFlowList {
 					m.RightPanelFocus = FocusFilePreview
 				} else {
 					m.RightPanelFocus = FocusFlowList
 				}
+			} else {
+				m.NormalRightFocus = !m.NormalRightFocus
 			}
 		case "d":
 			m.ShowDiagnostics = !m.ShowDiagnostics
@@ -324,6 +383,70 @@ func (m *AppModel) performSearch() {
 			m.SelectedIdx = 0
 		}
 	}
+
+	m.loadDirectoryListing()
+}
+
+func (m *AppModel) loadDirectoryListing() {
+	if len(m.FilteredIndices) == 0 || m.SelectedIdx >= len(m.FilteredIndices) {
+		m.DirectoryListing = ""
+		return
+	}
+
+	idx := m.FilteredIndices[m.SelectedIdx]
+	dir := m.TraceResult.PathEntries[idx].Value
+
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		m.DirectoryListing = fmt.Sprintf("Error reading directory: %v", err)
+		return
+	}
+
+	m.FileCount = 0
+	m.DirCount = 0
+	var sb strings.Builder
+	w := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
+
+	for _, f := range files {
+		info, err := f.Info()
+		if err != nil {
+			continue
+		}
+
+		if f.IsDir() {
+			m.DirCount++
+		} else {
+			m.FileCount++
+		}
+
+		// Permissions
+		mode := info.Mode().String()
+
+		// Size
+		size := info.Size()
+		sizeStr := fmt.Sprintf("%d", size)
+		if size > 1024*1024 {
+			sizeStr = fmt.Sprintf("%.1fM", float64(size)/(1024*1024))
+		} else if size > 1024 {
+			sizeStr = fmt.Sprintf("%.1fK", float64(size)/1024)
+		}
+
+		// Time
+		modTime := info.ModTime().Format("Jan 02 15:04")
+
+		// Icon and Name
+		icon := "📄"
+		if f.IsDir() {
+			icon = "📁"
+		} else if info.Mode().Perm()&0111 != 0 {
+			icon = "🚀"
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s %s\n", mode, sizeStr, modTime, icon, f.Name())
+	}
+	w.Flush()
+	m.DirectoryListing = sb.String()
+	m.DetailsScrollY = 0 // Reset scroll position when loading new directory
 }
 
 func (m *AppModel) loadSelectedFile() {

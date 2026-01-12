@@ -193,11 +193,16 @@ func (m AppModel) View() string {
 		leftView.WriteString("\n")
 	}
 
+	lBorderColor := borderColor
+	if !m.ShowFlow && !m.NormalRightFocus {
+		lBorderColor = activeColor
+	}
+
 	left := lipgloss.NewStyle().
 		Width(leftWidth).
 		Height(interiorHeight).
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("63")).
+		BorderForeground(lBorderColor).
 		Render(strings.TrimSuffix(leftView.String(), "\n"))
 
 	// RIGHT PANEL: Details OR Flow List
@@ -544,30 +549,74 @@ func (m AppModel) View() string {
 				}
 			}
 
-			// Flow info
-			rightView.WriteString(fmt.Sprintf("\n\nFlow Node: %s", entry.FlowID))
+			// Stats
+			rightView.WriteString(fmt.Sprintf("\nContents:   %d files, %d directories", m.FileCount, m.DirCount))
+
+			// Directory Listing
+			if m.DirectoryListing != "" {
+				rightView.WriteString("\n\n--- Directory Listing ---")
+				rightView.WriteString("\n" + m.DirectoryListing)
+			}
+
 		} else {
 			rightView.WriteString("\nNo entries found.")
 		}
 	}
 
-	// Viewport for right panel content?
-	// m.DetailsViewport.SetContent(rightView.String())
-	// Actually, simple resize render is easier for now than managing viewport scrolling for both modes.
-	// Just rendering string is safer unless content overflows.
-	// Assuming content fits for now.
+	rBorderColor := borderColor
+	if !m.ShowFlow && m.NormalRightFocus {
+		rBorderColor = activeColor
+	}
+
+	// Line slicing for NORMAL details mode
+	finalRightViewContent := rightView.String()
+	if !m.ShowFlow {
+		lines := strings.Split(strings.TrimSuffix(finalRightViewContent, "\n"), "\n")
+		// Content height = interiorHeight
+		startY := m.DetailsScrollY
+		if startY >= len(lines) && len(lines) > 0 {
+			startY = len(lines) - interiorHeight
+		}
+		if startY < 0 {
+			startY = 0
+		}
+		endY := startY + interiorHeight
+		if endY > len(lines) {
+			endY = len(lines)
+		}
+
+		if len(lines) > interiorHeight {
+			// Add scroll indicator if focused or not?
+			// Let's just slice for now.
+		}
+
+		visibleLines := lines[startY:endY]
+		var sb strings.Builder
+		for i, line := range visibleLines {
+			if len(line) > rightWidth {
+				line = line[:rightWidth-4] + "..."
+			}
+			sb.WriteString(line)
+			if i < len(visibleLines)-1 {
+				sb.WriteString("\n")
+			}
+		}
+		finalRightViewContent = sb.String()
+	}
 
 	right := lipgloss.NewStyle().
 		Width(rightWidth).
 		Height(interiorHeight).
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("63")).
-		Render(strings.TrimSuffix(rightView.String(), "\n"))
+		BorderForeground(rBorderColor).
+		Render(finalRightViewContent)
 
 	// Footer
-	help := "Help: ↑/↓: Navigate • d: Diagnostics • f/F: Flow • w: Which • q: Quit"
-	if m.ShowFlow {
-		help = "Flow Mode: ↑/↓: Select Config File • f: Return to Path List • F: Toggle Cumulative • q: Quit"
+	help := "Help: ↑/↓: Navigate • Tab: Switch Panel • d: Diagnostics • f/F: Flow • w: Which • q: Quit"
+	if m.NormalRightFocus && !m.ShowFlow {
+		help = "Details Mode: ↑/↓: Scroll • Tab: Return to Path List • q: Quit"
+	} else if m.ShowFlow {
+		help = "Flow Mode: ↑/↓: Select Config File • Tab: Switch Focus • f: Return to Path List • F: Toggle Cumulative • q: Quit"
 	}
 
 	footer := "\n\n" + help

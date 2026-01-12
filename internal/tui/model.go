@@ -41,7 +41,12 @@ type AppModel struct {
 	ScrollPositions map[string]int // Map of file path -> scroll position
 
 	// Components
-	DetailsViewport viewport.Model
+	DetailsViewport  viewport.Model
+	DirectoryListing string
+	DetailsScrollY   int
+	NormalRightFocus bool
+	FileCount        int
+	DirCount         int
 }
 
 const (
