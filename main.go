@@ -32,7 +32,7 @@ func main() {
 	reportFlag := flag.Bool("report", false, "Generate a detailed diagnostic report (CLI mode)")
 	outputFlag := flag.String("o", "", "Save report to the specified file (combined with --report)")
 	verboseFlag := flag.Bool("verbose", false, "Include detailed internal model data in the report")
-	webFlag := flag.Bool("w", false, "Start Web Mode (not implemented)")
+	webFlag := flag.Bool("w", false, "Start Web Mode on http://localhost:8080")
 	flag.Parse()
 
 	if *webFlag {

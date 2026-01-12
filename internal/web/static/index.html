@@ -1,59 +1,590 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>lspath - PATH Visualizer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
     <style>
         :root {
+            --bg-deep: #0f111a;
             --bg-color: #1a1b26;
+            --bg-surface: #24283b;
             --text-color: #a9b1d6;
+            --text-muted: #565f89;
             --accent: #7aa2f7;
+            --accent-bright: #89ddff;
             --highlight: #292e42;
-            --dim: #565f89;
+            --border: #414868;
+            --warning: #ff9e64;
+            --success: #9ece6a;
+            --magenta: #bb9af7;
         }
-        body { font-family: 'Inter', sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; display: flex; height: 100vh; overflow: hidden; }
-        #app { display: flex; width: 100%; height: 100%; }
-        
-        /* Layout */
-        #left-panel { width: 50%; border-right: 1px solid #414868; display: flex; flex-direction: column; }
-        #right-panel { width: 50%; padding: 20px; overflow-y: auto; }
-        
-        #header { padding: 10px 20px; background: #24283b; font-weight: bold; border-bottom: 1px solid #414868; }
-        #path-list { flex: 1; overflow-y: auto; padding: 10px 0; }
-        
-        .path-entry { padding: 8px 20px; cursor: pointer; border-left: 3px solid transparent; }
-        .path-entry:hover { background: #24283b; }
-        .path-entry.selected { background: var(--highlight); border-left-color: var(--accent); color: #fff; }
-        
-        .detail-row { margin-bottom: 15px; }
-        .detail-label { color: var(--dim); font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.05em; }
-        .detail-value { font-size: 1.1em; color: #fff;             word-break: break-all; }
-        
-        .warning { color: #ff9e64; padding: 10px; background: #2e2825; border-radius: 4px; margin-top: 20px; }
-        .success { color: #9ece6a; }
-        
-        #footer { padding: 10px; background: #24283b; color: var(--dim); font-size: 0.8em; border-top: 1px solid #414868; }
-        
-        /* Flow Bar */
-        #flow-bar { display: flex; overflow-x: auto; padding: 10px; background: #16161e; border-bottom: 1px solid #414868; white-space: nowrap; }
-        .flow-node { padding: 4px 10px; border-radius: 4px; background: #24283b; margin-right: 8px; font-size: 0.8em; cursor: pointer; }
-        .flow-node.active { background: var(--accent); color: #1a1b26; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-deep);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar Navigation */
+        #sidebar {
+            width: 240px;
+            background: var(--bg-deep);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 0;
+        }
+
+        .nav-item {
+            padding: 12px 24px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-item:hover {
+            color: var(--text-color);
+            background: var(--highlight);
+        }
+
+        .nav-item.active {
+            color: var(--accent);
+            background: var(--highlight);
+            border-right: 2px solid var(--accent);
+        }
+
+        .sidebar-header {
+            padding: 0 24px 20px 24px;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .version-tag {
+            font-size: 0.5em;
+            background: var(--highlight);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--text-muted);
+        }
+
+        /* Main Content Areas */
+        #main-view {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .view-panel {
+            display: none;
+            width: 100%;
+            height: 100%;
+        }
+
+        .view-panel.active {
+            display: flex;
+        }
+
+        /* Lists & Details Panels */
+        .list-panel {
+            flex: 0 0 60%;
+            /* 60% of screen for paths */
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-color);
+            overflow: hidden;
+        }
+
+        .details-panel {
+            flex: 1;
+            /* Fills remaining space */
+            padding: 30px;
+            overflow-y: auto;
+            background: var(--bg-deep);
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        /* Search Bar */
+        #search-container {
+            padding: 15px 20px;
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .search-wrapper {
+            position: relative;
+            flex: 0 0 50%;
+            /* 50% width as requested */
+            display: flex;
+            align-items: center;
+        }
+
+        #search-input {
+            width: 100%;
+            padding-right: 35px;
+            /* Space for X */
+        }
+
+        #clear-search {
+            position: absolute;
+            right: 10px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 1.2em;
+            display: none;
+            /* Hidden by default */
+            user-select: none;
+        }
+
+        #clear-search:hover {
+            color: var(--text-color);
+        }
+
+        #search-button {
+            padding: 8px 16px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: opacity 0.2s;
+        }
+
+        #search-button:hover {
+            opacity: 0.9;
+        }
+
+        #search-input {
+            width: 100%;
+            background: var(--bg-deep);
+            border: 1px solid var(--border);
+            color: var(--text-color);
+            padding: 8px 12px;
+            border-radius: 6px;
+            outline: none;
+            font-family: inherit;
+        }
+
+        #search-input:focus {
+            border-color: var(--accent);
+        }
+
+        /* PATH List */
+        .items-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .item-row {
+            padding: 6px 20px;
+            /* Even more compact */
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8em;
+            /* Slightly smaller for density */
+            transition: background 0.2s;
+            display: flex;
+            justify-content: space-between;
+            line-height: 1.1;
+        }
+
+        .item-row:hover {
+            background: var(--bg-surface);
+        }
+
+        .item-row.selected {
+            background: var(--highlight);
+            border-left-color: var(--accent);
+            color: #fff;
+        }
+
+        .item-row.dimmed {
+            opacity: 0.3;
+        }
+
+        .item-row.highlighted {
+            color: var(--accent-bright);
+            font-weight: bold;
+        }
+
+        .item-row .status-pill {
+            font-size: 0.7em;
+            padding: 1px 4px;
+            border-radius: 3px;
+            background: var(--bg-deep);
+        }
+
+        /* Flow Mode Specifics */
+        #flow-header {
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        #flow-nodes {
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow-x: auto;
+            white-space: nowrap;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .flow-node {
+            padding: 6px 14px;
+            background: var(--bg-deep);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            color: var(--text-color);
+        }
+
+        .flow-node.start-node {
+            cursor: default;
+            background: var(--highlight);
+            /* Brighter start node */
+            border-color: var(--accent);
+            color: var(--accent-bright);
+            font-weight: bold;
+        }
+
+        .flow-node:hover:not(.start-node) {
+            border-color: var(--accent);
+        }
+
+        .flow-node.active {
+            background: var(--accent);
+            color: var(--bg-deep);
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+
+        .flow-arrow {
+            color: var(--accent);
+            /* Brighter arrow */
+            font-size: 1.2em;
+            flex-shrink: 0;
+            user-select: none;
+            opacity: 0.8;
+        }
+
+        #flow-subheader {
+            padding: 8px 15px;
+            background: var(--highlight);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #flow-split {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* File Preview Container */
+        #preview-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            border-left: 1px solid var(--border);
+            background: var(--bg-deep);
+            flex: 1;
+            /* Allow it to fill remaining space */
+            min-width: 200px;
+        }
+
+        /* Resizable Splitter */
+        .splitter {
+            width: 8px;
+            cursor: col-resize;
+            background: var(--bg-deep);
+            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            transition: background 0.2s;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .splitter:hover,
+        .splitter.active {
+            background: var(--accent);
+            opacity: 0.5;
+        }
+
+        .preview-header {
+            padding: 8px 20px;
+            background: var(--bg-surface);
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #file-preview {
+            flex: 1;
+            overflow: auto;
+            padding: 15px 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            /* Slightly smaller for density */
+            line-height: 1.5;
+            white-space: pre;
+        }
+
+        .highlight-line {
+            background: rgba(122, 162, 247, 0.1);
+            color: var(--accent-bright);
+            font-weight: bold;
+        }
+
+        /* LS-style Listing */
+        .listing-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            margin-top: 20px;
+        }
+
+        .listing-table th {
+            text-align: left;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 10px;
+        }
+
+        .listing-table td {
+            padding: 6px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .listing-name {
+            color: var(--accent-bright);
+        }
+
+        .listing-dir {
+            color: var(--magenta);
+            font-weight: bold;
+        }
+
+        /* Diagnostics Report Area */
+        #diagnostics-view {
+            padding: 40px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            max-width: 1200px;
+            /* Constrain width for readability */
+            margin: 0 auto;
+            /* Center it */
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #report-content {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-color);
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            white-space: pre-wrap;
+            line-height: 1.6;
+            flex: 1;
+            /* Allow to grow */
+        }
+
+        /* Detail Elements */
+        .detail-card {
+            background: var(--bg-surface);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            margin-bottom: 30px;
+        }
+
+        .detail-row {
+            margin-bottom: 15px;
+        }
+
+        .detail-label {
+            color: var(--text-muted);
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 4px;
+        }
+
+        .detail-value {
+            font-size: 1.05em;
+            color: #fff;
+            word-break: break-all;
+        }
+
+        .alert {
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid;
+            line-height: 1.4;
+        }
+
+        .alert-warning {
+            background: rgba(255, 158, 100, 0.1);
+            border-color: var(--warning);
+            color: var(--warning);
+        }
+
+        /* Controls */
+        #toggle-cumulative,
+        #toggle-verbose {
+            font-size: 0.8em;
+            background: var(--bg-deep);
+            color: var(--text-color);
+            border: 1px solid var(--border);
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        #toggle-cumulative:hover,
+        #toggle-verbose:hover {
+            border-color: var(--accent);
+        }
+
+        #toggle-cumulative.active,
+        #toggle-verbose.active {
+            background: var(--magenta);
+            color: #fff;
+            border-color: var(--magenta);
+        }
     </style>
 </head>
+
 <body>
-    <div id="app">
-        <div id="left-panel">
-            <div id="header">PATH Entries</div>
-            <div id="flow-bar"></div>
-            <div id="path-list">Loading trace...</div>
-            <div id="footer">↑/↓: Navigate • Type to Search</div>
+    <nav id="sidebar">
+        <div class="sidebar-header">
+            lspath
+            <span class="version-tag" id="version-display">v1.1.0</span>
         </div>
-        <div id="right-panel">
-            <h1>Details</h1>
-            <div id="details-content">Select an entry to see details.</div>
+        <div class="nav-item active" onclick="switchView('main')" id="nav-main">
+            <span>🔍</span> PATH Explorer
         </div>
-    </div>
+        <div class="nav-item" onclick="switchView('flow')" id="nav-flow">
+            <span>🌿</span> Configuration Flow
+        </div>
+        <div class="nav-item" onclick="switchView('diagnostics')" id="nav-diagnostics">
+            <span>🛡️</span> Diagnostics
+        </div>
+    </nav>
+
+    <main id="main-view">
+        <!-- Explorer View -->
+        <section id="main-panel" class="view-panel active">
+            <div class="list-panel">
+                <div id="search-container">
+                    <div class="search-wrapper">
+                        <input type="text" id="search-input" placeholder="Which binary? (Type name + Enter)...">
+                        <span id="clear-search" onclick="clearSearch()">&times;</span>
+                    </div>
+                    <button id="search-button" onclick="performWhichSearch()">Scan</button>
+                </div>
+                <div class="items-list" id="path-list">
+                    <!-- Path entries here -->
+                </div>
+            </div>
+            <div class="splitter" id="explorer-splitter"></div>
+            <div class="details-panel" id="explorer-details-panel">
+                <div id="details-header">
+                    <h1>Details</h1>
+                </div>
+                <div id="details-content">
+                    <p style="color:var(--text-muted)">Select an entry to see information about that directory.</p>
+                </div>
+                <div id="directory-listing-container">
+                    <!-- LS-style listing here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Flow View -->
+        <section id="flow-panel" class="view-panel">
+            <div style="display:flex; flex-direction:column; width:100%;">
+                <div id="flow-header">
+                    <div id="flow-nodes">
+                        <!-- Flow nodes extend to the right -->
+                    </div>
+                </div>
+                <div id="flow-split">
+                    <div class="list-panel" id="flow-list-panel">
+                        <div id="flow-subheader">
+                            <span style="font-size:0.75em; color:var(--text-muted)">PATH Evolution</span>
+                            <button id="toggle-cumulative" onclick="toggleCumulative()">Cumulative View</button>
+                        </div>
+                        <div class="items-list" id="flow-path-list">
+                            <!-- Filtered path entries for flow -->
+                        </div>
+                    </div>
+                    <div class="splitter" id="flow-splitter"></div>
+                    <div id="preview-container">
+                        <div class="preview-header">
+                            <span id="preview-filename">File Preview</span>
+                        </div>
+                        <div id="file-preview">Select a configuration file above.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Diagnostics View -->
+        <section id="diagnostics-panel" class="view-panel">
+            <div id="diagnostics-view">
+                <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 20px;">
+                    <h1>Diagnostic Report</h1>
+                    <div style="display:flex; gap: 10px; align-items: center;">
+                        <button id="toggle-verbose" onclick="toggleVerbose()">Verbose Report</button>
+                    </div>
+                </div>
+                <div id="report-content">Loading report...</div>
+            </div>
+        </section>
+    </main>
+
     <script src="app.js"></script>
 </body>
+
 </html>
