@@ -16,6 +16,22 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// expandTilde expands ~ to the user's home directory
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	} else if path == "~" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return home
+		}
+	}
+	return path
+}
+
 // MsgTraceReady indicates that the trace has completed.
 type MsgTraceReady model.AnalysisResult
 
@@ -352,7 +368,7 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "f":
 			m.ShowFlow = !m.ShowFlow
-			m.CumulativeFlow = false
+			m.CumulativeFlow = m.ShowFlow // Default to cumulative when entering flow mode
 			m.ShowDiagnostics = false
 			if len(m.TraceResult.FlowNodes) > 0 && m.FlowSelectedIdx >= len(m.TraceResult.FlowNodes) {
 				m.FlowSelectedIdx = 0
@@ -534,6 +550,7 @@ func (m *AppModel) loadDirectoryListing() {
 
 	idx := m.FilteredIndices[m.SelectedIdx]
 	dir := m.TraceResult.PathEntries[idx].Value
+	dir = expandTilde(dir)
 
 	files, err := os.ReadDir(dir)
 	if err != nil {

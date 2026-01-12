@@ -141,7 +141,11 @@ func (m AppModel) View() string {
 
 		line := fmt.Sprintf("%d. %s", idx+1, entry.Value)
 		if entry.IsDuplicate {
-			line += " (dup)"
+			line += " (duplicate)"
+		} else if entry.SymlinkPointsTo >= 0 {
+			line += " (duplicate, symlink)"
+		} else if entry.IsSymlink {
+			line += " (symlink)"
 		}
 
 		// Priority indicators
@@ -179,18 +183,11 @@ func (m AppModel) View() string {
 			}
 
 			if highlight {
-				if isRowSelected {
-					style = selectedStyle
-				} else {
-					style = highlightStyle
-				}
+				// Don't show selection in flow mode, just highlight
+				style = highlightStyle
 			} else {
-				// Dimmed
-				if isRowSelected {
-					style = selectedStyle // Selection always visible
-				} else {
-					style = dimmedStyle
-				}
+				// Dimmed - no selection shown
+				style = dimmedStyle
 			}
 		} else {
 			// Normal Mode
@@ -560,7 +557,18 @@ func (m AppModel) View() string {
 			idx := m.FilteredIndices[m.SelectedIdx]
 			entry := m.TraceResult.PathEntries[idx]
 
-			rightView.WriteString(fmt.Sprintf("\nDirectory:  %s", entry.Value))
+			// Build directory line with optional hint
+			dirLine := fmt.Sprintf("\nDirectory:  %s", entry.Value)
+			if !m.ShowDiagnostics {
+				if entry.IsDuplicate {
+					origPath := m.TraceResult.PathEntries[entry.DuplicateOf].Value
+					dirLine += fmt.Sprintf("  (Duplicate → #%d: %s. Press 'd' for details)", entry.DuplicateOf+1, origPath)
+				} else if entry.SymlinkPointsTo >= 0 {
+					targetPath := m.TraceResult.PathEntries[entry.SymlinkPointsTo].Value
+					dirLine += fmt.Sprintf("  (Symlink → #%d: %s. Press 'd' for details)", entry.SymlinkPointsTo+1, targetPath)
+				}
+			}
+			rightView.WriteString(dirLine)
 			rightView.WriteString(fmt.Sprintf("\nSource:     %s", entry.SourceFile))
 			rightView.WriteString(fmt.Sprintf("\nLine:       %d", entry.LineNumber))
 			rightView.WriteString(fmt.Sprintf("\nMode:       %s", entry.Mode))
@@ -611,12 +619,10 @@ func (m AppModel) View() string {
 			if m.ShowDiagnostics {
 				if entry.IsDuplicate {
 					rightView.WriteString(adviceStyle.Render(fmt.Sprintf("\n\n⚠️ DUPLICATE detected!\n%s", entry.Remediation)))
+				} else if entry.SymlinkPointsTo >= 0 {
+					rightView.WriteString(adviceStyle.Render(fmt.Sprintf("\n\n🔗 SYMLINK detected\nThis path is a symbolic link to: %s\nPoints to PATH entry #%d\n\nThis is normal on modern Linux systems.", entry.SymlinkTarget, entry.SymlinkPointsTo+1)))
 				} else {
 					rightView.WriteString("\n\n✅ No issues detected.")
-				}
-			} else {
-				if entry.IsDuplicate {
-					rightView.WriteString("\n\n(Duplicate detected. Press 'd' for details)")
 				}
 			}
 

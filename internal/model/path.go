@@ -11,6 +11,11 @@ type PathEntry struct {
 	DuplicateOf int      // Index of the original entry if this is a duplicate
 	Remediation string   // Advice on how to fix/remove if duplicate
 
+	// Symlink tracking
+	IsSymlink       bool   // True if this path is a symlink
+	SymlinkTarget   string // Resolved target of the symlink
+	SymlinkPointsTo int    // Index of PATH entry that this symlink resolves to (-1 if none)
+
 	// Flow Attribution
 	FlowID      string   // ID of the ConfigNode this belongs to
 	Diagnostics []string // List of issues (e.g., missing directory)

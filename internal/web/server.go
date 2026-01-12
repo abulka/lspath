@@ -8,11 +8,28 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"lspath/internal/model"
 	"lspath/internal/trace"
 	"strings"
 )
+
+// expandTilde expands ~ to the user's home directory
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	} else if path == "~" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return home
+		}
+	}
+	return path
+}
 
 //go:embed static/*
 var staticFS embed.FS
@@ -123,6 +140,7 @@ func handleLs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path is required", 400)
 		return
 	}
+	path = expandTilde(path)
 
 	files, err := os.ReadDir(path)
 	if err != nil {
@@ -187,8 +205,9 @@ func handleWhich(w http.ResponseWriter, r *http.Request) {
 		if seenDirs[dir] {
 			continue
 		}
+		expandedDir := expandTilde(dir)
 
-		files, err := os.ReadDir(dir)
+		files, err := os.ReadDir(expandedDir)
 		if err != nil {
 			continue
 		}

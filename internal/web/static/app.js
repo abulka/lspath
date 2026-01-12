@@ -272,13 +272,19 @@ function renderPathList(containerId, indices, selectedIdx, viewType) {
             status.className = 'status-pill';
             status.textContent = 'dup';
             div.appendChild(status);
+        } else if (entry.SymlinkPointsTo >= 0) {
+            const status = document.createElement('span');
+            status.className = 'status-pill';
+            status.style.background = '#3b82f6';
+            status.textContent = 'symlink';
+            div.appendChild(status);
         }
 
         div.onclick = () => {
             if (viewType === 'main') {
                 state.mainSelectedIndex = viewIdx;
                 renderDetails();
-                renderPathList(containerId, indices, selectedIdx, viewType);
+                renderPathList(containerId, indices, state.mainSelectedIndex, viewType);
             } else {
                 state.flowSelectedIndex = viewIdx;
                 // Bidirectional logic on click
@@ -342,6 +348,15 @@ async function renderDetails() {
             <div class="alert alert-warning">
                 <strong>⚠️ DUPLICATE DETECTED</strong><br>
                 ${entry.Remediation}
+            </div>
+        `;
+    } else if (entry.SymlinkPointsTo >= 0) {
+        html += `
+            <div class="alert alert-warning" style="background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.3);">
+                <strong>🔗 SYMLINK DETECTED</strong><br>
+                This path is a symbolic link to: <strong>${entry.SymlinkTarget}</strong><br>
+                Points to PATH entry #${entry.SymlinkPointsTo + 1}<br>
+                <em style="color:var(--text-muted);font-size:0.9em;">This is normal on modern Linux systems.</em>
             </div>
         `;
     }

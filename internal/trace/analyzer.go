@@ -4,10 +4,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"lspath/internal/model"
 )
+
+// expandTilde expands ~ to the user's home directory for path normalization
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	} else if path == "~" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return home
+		}
+	}
+	return path
+}
 
 // Analyzer processes trace events to reconstruct the PATH evolution.
 type Analyzer struct {
@@ -187,13 +204,50 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 	entries := make([]model.PathEntry, len(currentEntries))
 	for i, e := range currentEntries {
 		entries[i] = *e
+		// Initialize SymlinkPointsTo to -1 to indicate "not a symlink" or "doesn't point to another entry"
+		entries[i].SymlinkPointsTo = -1
 	}
 
 	// Post-process for Duplicates and Disk existence
-	seen := make(map[string]int) // value -> index
+	seen := make(map[string]int)          // normalized value -> index
+	resolvedPaths := make(map[string]int) // resolved symlink path -> index
+
 	for i, e := range entries {
-		// 1. Duplicate check
-		if firstIdx, ok := seen[e.Value]; ok {
+		// Normalize path for comparison (expand ~)
+		normalizedPath := expandTilde(e.Value)
+
+		// Check if THIS path itself (not parent directories) is a symlink
+		fileInfo, err := os.Lstat(normalizedPath)
+		var resolvedPath string
+		if err == nil && fileInfo.Mode()&os.ModeSymlink != 0 {
+			// It's a direct symlink - read the immediate target
+			target, err := os.Readlink(normalizedPath)
+			if err == nil {
+				// Convert relative symlink target to absolute path
+				var absTarget string
+				if filepath.IsAbs(target) {
+					absTarget = target
+				} else {
+					// Relative symlink - resolve relative to parent directory
+					parent := filepath.Dir(normalizedPath)
+					absTarget = filepath.Join(parent, target)
+				}
+				// Clean the path to normalize it
+				absTarget = filepath.Clean(absTarget)
+
+				entries[i].IsSymlink = true
+				entries[i].SymlinkTarget = absTarget
+				resolvedPath = absTarget
+				entries[i].SymlinkPointsTo = -1 // Will be set below if it matches another entry
+			}
+		}
+
+		if resolvedPath == "" {
+			resolvedPath = normalizedPath
+		}
+
+		// 1. Duplicate check - check both normalized path and resolved path
+		if firstIdx, ok := seen[normalizedPath]; ok {
 			entries[i].IsDuplicate = true
 			entries[i].DuplicateOf = firstIdx
 
@@ -203,12 +257,21 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 				"Duplicate of entry %d (from %s). Check %s:%d to see why it's re-added.",
 				firstIdx+1, firstSrc, e.SourceFile, e.LineNumber,
 			)
-		} else {
-			seen[e.Value] = i
+		} else if entries[i].IsSymlink {
+			// Check if this symlink's target matches another PATH entry
+			if firstIdx, ok := resolvedPaths[resolvedPath]; ok {
+				entries[i].SymlinkPointsTo = firstIdx
+			}
 		}
 
-		// 2. Disk existence check
-		if _, err := os.Stat(e.Value); os.IsNotExist(err) {
+		// Always add to maps for future comparisons
+		if !entries[i].IsDuplicate {
+			seen[normalizedPath] = i
+			resolvedPaths[resolvedPath] = i
+		}
+
+		// 2. Disk existence check (use normalized path)
+		if _, err := os.Stat(normalizedPath); os.IsNotExist(err) {
 			entries[i].Diagnostics = append(entries[i].Diagnostics, "Directory does not exist on disk.")
 		}
 	}
@@ -368,21 +431,29 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 		sb.WriteString(fmt.Sprintf("PATH (%d ENTRIES) - Use --verbose (or 'v' in TUI) for details\n", len(res.PathEntries)))
 		sb.WriteString("-----------------------------------------------------------\n\n")
 		for i, e := range res.PathEntries {
-			icon := "✓"
 			statusLabel := ""
 			if e.IsDuplicate {
-				icon = "⚡"
-				statusLabel = fmt.Sprintf(" [DUPLICATE → see #%d]", e.DuplicateOf+1)
+				origPath := res.PathEntries[e.DuplicateOf].Value
+				statusLabel = fmt.Sprintf(" [duplicate → #%d: %s]", e.DuplicateOf+1, origPath)
+			} else if e.SymlinkPointsTo >= 0 {
+				targetPath := res.PathEntries[e.SymlinkPointsTo].Value
+				statusLabel = fmt.Sprintf(" [duplicate, symlink → #%d: %s]", e.SymlinkPointsTo+1, targetPath)
 			} else if isMissing(e.Value) {
-				icon = "⚠"
 				statusLabel = " [MISSING]"
+			}
+
+			// Priority indicators
+			if i == 0 {
+				statusLabel += " (highest priority)"
+			} else if i == len(res.PathEntries)-1 {
+				statusLabel += " (lowest priority)"
 			}
 
 			displayPath := e.Value
 			if len(displayPath) > 60 {
 				displayPath = displayPath[:57] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("%s %2d. %s%s\n", icon, i+1, displayPath, statusLabel))
+			sb.WriteString(fmt.Sprintf("%2d. %s%s\n", i+1, displayPath, statusLabel))
 		}
 		sb.WriteString("\n")
 	}
@@ -393,7 +464,7 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 	okCount, dupCount, missCount := 0, 0, 0
 	sources := make(map[string]int)
 	for _, e := range res.PathEntries {
-		if e.IsDuplicate {
+		if e.IsDuplicate || e.SymlinkPointsTo >= 0 {
 			dupCount++
 		} else if isMissing(e.Value) {
 			missCount++
@@ -432,8 +503,14 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 		for i, e := range res.PathEntries {
 			if e.IsDuplicate {
 				sb.WriteString(fmt.Sprintf("%2d. %s\n", i+1, e.Value))
-				sb.WriteString(fmt.Sprintf("    » Already added at entry %d\n", e.DuplicateOf+1))
-				sb.WriteString(fmt.Sprintf("    » Remove from: %s:%d\n\n", e.SourceFile, e.LineNumber))
+				// Get the original entry's source file
+				origSource := res.PathEntries[e.DuplicateOf].SourceFile
+				sb.WriteString(fmt.Sprintf("    » Already added at entry %d (by %s)\n", e.DuplicateOf+1, origSource))
+				sb.WriteString(fmt.Sprintf("    » Advice: remove line %d from %s\n\n", e.LineNumber, e.SourceFile))
+			} else if e.SymlinkPointsTo >= 0 {
+				sb.WriteString(fmt.Sprintf("%2d. %s\n", i+1, e.Value))
+				sb.WriteString(fmt.Sprintf("    » Symlink resolves to entry %d (%s)\n", e.SymlinkPointsTo+1, e.SymlinkTarget))
+				sb.WriteString(fmt.Sprintf("    » This is normal on modern Linux systems\n\n"))
 			}
 		}
 	}
@@ -513,13 +590,62 @@ var zshStandard = []standardConfig{
 	{"/.zlogin", 8},
 }
 
+var bashStandard = []standardConfig{
+	{"/etc/profile", 1},
+	{"/.bash_profile", 2},
+	{"/.bash_login", 3},
+	{"/.profile", 4},
+	{"/.bashrc", 5},
+}
+
+// detectShellFromNodes determines if the executed files are bash or zsh
+func detectShellFromNodes(nodes []model.ConfigNode) string {
+	bashCount := 0
+	zshCount := 0
+
+	for _, node := range nodes {
+		if node.NotExecuted {
+			continue
+		}
+		path := strings.ToLower(node.FilePath)
+		if strings.Contains(path, "bash") {
+			bashCount++
+		}
+		if strings.Contains(path, "zsh") {
+			zshCount++
+		}
+	}
+
+	// If we see bash files executed, it's bash
+	if bashCount > 0 && zshCount == 0 {
+		return "bash"
+	}
+	// If we see zsh files executed, it's zsh
+	if zshCount > 0 && bashCount == 0 {
+		return "zsh"
+	}
+	// Default to zsh if ambiguous or no specific shell files found
+	return "zsh"
+}
+
 func injectMissingNodes(nodes []model.ConfigNode) []model.ConfigNode {
+	// Detect which shell is being used based on executed files
+	detectedShell := detectShellFromNodes(nodes)
+
+	// Only inject missing nodes for the detected shell
+	var standardConfigs []standardConfig
+	if detectedShell == "bash" {
+		standardConfigs = bashStandard
+	} else {
+		standardConfigs = zshStandard
+	}
+
 	var result []model.ConfigNode
 	standardIdx := 0
 
 	// Helper to get rank of a node (if it matches standard)
 	getRank := func(path string) int {
-		for _, s := range zshStandard {
+		for _, s := range standardConfigs {
 			if strings.HasSuffix(path, s.PathSuffix) {
 				return s.Rank
 			}
@@ -535,8 +661,8 @@ func injectMissingNodes(nodes []model.ConfigNode) []model.ConfigNode {
 
 		// If the current actual node has a rank, we fill in gaps up to that rank.
 		if nodeRank != 999 {
-			for standardIdx < len(zshStandard) {
-				std := zshStandard[standardIdx]
+			for standardIdx < len(standardConfigs) {
+				std := standardConfigs[standardIdx]
 				if std.Rank < nodeRank {
 					// This standard file comes BEFORE the current node, and we haven't seen it.
 					// Insert it.
@@ -548,7 +674,7 @@ func injectMissingNodes(nodes []model.ConfigNode) []model.ConfigNode {
 
 					displayPath := std.PathSuffix
 					if strings.HasPrefix(displayPath, "/.") {
-						displayPath = "~" + displayPath // ~/.zshrc
+						displayPath = "~" + displayPath // ~/.zshrc or ~/.bashrc
 					}
 
 					result = append(result, model.ConfigNode{
@@ -581,8 +707,8 @@ func injectMissingNodes(nodes []model.ConfigNode) []model.ConfigNode {
 	}
 
 	// Append remaining standard files
-	for standardIdx < len(zshStandard) {
-		std := zshStandard[standardIdx]
+	for standardIdx < len(standardConfigs) {
+		std := standardConfigs[standardIdx]
 		displayPath := std.PathSuffix
 		if strings.HasPrefix(displayPath, "/.") {
 			displayPath = "~" + displayPath
