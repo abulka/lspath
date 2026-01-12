@@ -35,6 +35,10 @@ var (
 
 	adviceStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("208")) // Orange
+
+	pathHighlightStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("81")). // Sky Blue/Cyan
+				Bold(true)
 )
 
 func (m AppModel) View() string {
@@ -459,11 +463,42 @@ func (m AppModel) View() string {
 
 		if len(lines) > 0 && startY < len(lines) && m.PreviewPath != "" {
 			visibleLines := lines[startY:endY]
-			for _, line := range visibleLines {
-				if len(line) > rightWidth {
-					line = line[:rightWidth-4] + "..."
+
+			// Pre-calculate line number width
+			lnWidth := len(fmt.Sprintf("%d", len(lines)))
+			if lnWidth < 2 {
+				lnWidth = 2
+			}
+
+			for i, line := range visibleLines {
+				lineNum := startY + i + 1
+				lnPrefix := fmt.Sprintf(" %*d | ", lnWidth, lineNum)
+				prefixLen := len(lnPrefix)
+
+				contentWidth := rightWidth - prefixLen
+				if contentWidth < 10 {
+					contentWidth = 10
 				}
-				previewBuilder.WriteString(line)
+
+				// Highlighting check
+				isHighlighted := strings.Contains(line, "export PATH") ||
+					strings.Contains(line, "PATH=") ||
+					strings.Contains(line, "source ") ||
+					strings.Contains(line, ". ")
+
+				// Truncate
+				displayLine := line
+				if len(displayLine) > contentWidth {
+					displayLine = displayLine[:contentWidth-3] + "..."
+				}
+
+				// Render
+				previewBuilder.WriteString(dimStyle.Render(lnPrefix))
+				if isHighlighted {
+					previewBuilder.WriteString(pathHighlightStyle.Render(displayLine))
+				} else {
+					previewBuilder.WriteString(displayLine)
+				}
 				previewBuilder.WriteString("\n")
 			}
 		} else if len(lines) == 0 && m.PreviewPath != "" {
