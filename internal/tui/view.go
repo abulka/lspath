@@ -143,9 +143,17 @@ func (m AppModel) View() string {
 		if entry.IsDuplicate {
 			line += " (dup)"
 		}
+
+		// Priority indicators
+		if idx == 0 {
+			line += " (highest priority)"
+		} else if idx == len(m.TraceResult.PathEntries)-1 {
+			line += " (lowest priority)"
+		}
+
 		// Truncate
 		if len(line) > leftWidth-2 {
-			line = line[:leftWidth-2] + "…"
+			line = line[:leftWidth-5] + "..."
 		}
 
 		// Styling logic
@@ -378,6 +386,12 @@ func (m AppModel) View() string {
 
 			// Combine: Order. Indent Name (cont) (Description) [Status]
 			line := fmt.Sprintf("%d. %s%s%s%s%s", node.Order, indent, name, contStr, note, statusStr)
+
+			if i == 0 {
+				line += " (executed first)"
+			} else if i == len(m.TraceResult.FlowNodes)-1 {
+				line += " (executed last)"
+			}
 
 			// If NotExecuted, maybe dim it even more?
 			styleToUse := normalStyle
