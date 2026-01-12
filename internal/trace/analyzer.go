@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,6 +25,25 @@ func expandTilde(path string) string {
 		}
 	}
 	return path
+}
+
+// getLineFromFile reads a specific line number from a file
+func getLineFromFile(filePath string, lineNum int) string {
+	f, err := os.Open(expandTilde(filePath))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	currentLine := 0
+	for scanner.Scan() {
+		currentLine++
+		if currentLine == lineNum {
+			return strings.TrimSpace(scanner.Text())
+		}
+	}
+	return ""
 }
 
 // Analyzer processes trace events to reconstruct the PATH evolution.
@@ -65,9 +85,23 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 		return len(fileStack) - 1
 	}
 
+	// Track eval contexts to properly attribute PATH changes
+	// Map: file -> evalLine
+	// We track evals that contain command substitution ($(...) or backticks)
+	// because these can produce output that modifies PATH
+	evalContext := make(map[string]int)
+	// Track which files have had a PATH change attributed to an eval
+	evalUsed := make(map[string]bool)
+
 	nodeCounter := 0
 
 	for _, ev := range events {
+		// Detect eval commands with command substitution and track their line numbers
+		if strings.Contains(ev.RawCommand, "eval ") &&
+			(strings.Contains(ev.RawCommand, "$(") || strings.Contains(ev.RawCommand, "`")) {
+			evalContext[ev.File] = ev.Line
+			evalUsed[ev.File] = false
+		}
 		// Flow Graph Construction
 		if ev.File != lastFile {
 			// Check if this file is "noisy" (system functions)
@@ -186,10 +220,20 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 					newEntries = append(newEntries, &e)
 				} else {
 					// New Entry
+					// Check if we're in an eval context
+					lineNum := ev.Line
+					if evalLine, inEval := evalContext[ev.File]; inEval && !evalUsed[ev.File] && ev.Line > evalLine {
+						// This PATH change is happening after an eval on an earlier line
+						// Attribute it to the eval's line instead
+						lineNum = evalLine
+						// Mark this eval as used so subsequent PATH changes get their real line numbers
+						evalUsed[ev.File] = true
+					}
+
 					e := model.PathEntry{
 						Value:      p,
 						SourceFile: ev.File,
-						LineNumber: ev.Line,
+						LineNumber: lineNum,
 						FlowID:     currentNode.ID,
 						Mode:       GuessShellMode(ev.File),
 					}
@@ -251,12 +295,20 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 			entries[i].IsDuplicate = true
 			entries[i].DuplicateOf = firstIdx
 
-			// Advice
-			firstSrc := entries[firstIdx].SourceFile
-			entries[i].Remediation = fmt.Sprintf(
-				"Duplicate of entry %d (from %s). Check %s:%d to see why it's re-added.",
-				firstIdx+1, firstSrc, e.SourceFile, e.LineNumber,
-			)
+			// Advice - different message if both entries come from the same source
+			orig := entries[firstIdx]
+			if e.SourceFile == orig.SourceFile && e.LineNumber == orig.LineNumber {
+				// Same source - likely a tracing limitation or path was already in $PATH
+				entries[i].Remediation = fmt.Sprintf(
+					"Duplicate of entry %d<br>This path was already in $PATH before line %d executed",
+					firstIdx+1, e.LineNumber,
+				)
+			} else {
+				entries[i].Remediation = fmt.Sprintf(
+					"Duplicate of entry %d (from line %d of %s)<br>Advice: remove line %d from %s",
+					firstIdx+1, orig.LineNumber, orig.SourceFile, e.LineNumber, e.SourceFile,
+				)
+			}
 		} else if entries[i].IsSymlink {
 			// Check if this symlink's target matches another PATH entry
 			if firstIdx, ok := resolvedPaths[resolvedPath]; ok {
@@ -503,10 +555,28 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 		for i, e := range res.PathEntries {
 			if e.IsDuplicate {
 				sb.WriteString(fmt.Sprintf("%2d. %s\n", i+1, e.Value))
-				// Get the original entry's source file
-				origSource := res.PathEntries[e.DuplicateOf].SourceFile
-				sb.WriteString(fmt.Sprintf("    » Already added at entry %d (by %s)\n", e.DuplicateOf+1, origSource))
-				sb.WriteString(fmt.Sprintf("    » Advice: remove line %d from %s\n\n", e.LineNumber, e.SourceFile))
+				orig := res.PathEntries[e.DuplicateOf]
+
+				// Show where this entry was added
+				sb.WriteString(fmt.Sprintf("    » Added by line %d of %s\n", e.LineNumber, e.SourceFile))
+
+				// Quote the actual source line
+				sourceLine := getLineFromFile(e.SourceFile, e.LineNumber)
+				if sourceLine != "" {
+					// Truncate if too long
+					if len(sourceLine) > 70 {
+						sourceLine = sourceLine[:67] + "..."
+					}
+					sb.WriteString(fmt.Sprintf("    » \"%s\"\n", sourceLine))
+				}
+
+				// Check if both entries come from the same source file and line
+				if e.SourceFile == orig.SourceFile && e.LineNumber == orig.LineNumber {
+					sb.WriteString(fmt.Sprintf("    » Duplicates entry #%d which was already in $PATH\n\n", e.DuplicateOf+1))
+				} else {
+					sb.WriteString(fmt.Sprintf("    » Duplicates entry #%d (from line %d of %s)\n", e.DuplicateOf+1, orig.LineNumber, orig.SourceFile))
+					sb.WriteString(fmt.Sprintf("    » Advice: remove line %d from %s\n\n", e.LineNumber, e.SourceFile))
+				}
 			} else if e.SymlinkPointsTo >= 0 {
 				sb.WriteString(fmt.Sprintf("%2d. %s\n", i+1, e.Value))
 				sb.WriteString(fmt.Sprintf("    » Symlink resolves to entry %d (%s)\n", e.SymlinkPointsTo+1, e.SymlinkTarget))
