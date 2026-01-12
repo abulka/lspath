@@ -481,10 +481,32 @@ func (m AppModel) View() string {
 				}
 
 				// Highlighting check
-				isHighlighted := strings.Contains(line, "export PATH") ||
-					strings.Contains(line, "PATH=") ||
-					strings.Contains(line, "source ") ||
-					strings.Contains(line, ". ")
+				trimmedLine := strings.TrimSpace(line)
+				isHighlighted := false
+				if !strings.HasPrefix(trimmedLine, "#") {
+					// 1. Explicit PATH exports/assignments
+					isHighlighted = strings.Contains(line, "export PATH") || strings.Contains(line, "PATH=")
+
+					// 2. Sourcing commands (source, ., \.)
+					if !isHighlighted {
+						sourcingKeywords := []string{"source ", ". ", "\\. "}
+						for _, k := range sourcingKeywords {
+							if strings.HasPrefix(trimmedLine, k) ||
+								strings.Contains(trimmedLine, "; "+k) ||
+								strings.Contains(trimmedLine, "&& "+k) {
+								isHighlighted = true
+								break
+							}
+						}
+					}
+
+					// 3. Execution/Helper commands
+					if !isHighlighted {
+						isHighlighted = strings.Contains(line, "eval ") ||
+							strings.Contains(line, "brew shellenv") ||
+							(strings.Contains(line, "path_helper") && !strings.Contains(line, "if "))
+					}
+				}
 
 				// Truncate
 				displayLine := line
