@@ -74,9 +74,41 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		if m.ShowHelp {
+			switch msg.String() {
+			case "?", "esc", "q":
+				m.ShowHelp = false
+				return m, nil
+			case "up", "k":
+				if m.HelpScrollY > 0 {
+					m.HelpScrollY--
+				}
+			case "down", "j":
+				m.HelpScrollY++
+			case "pgup", "ctrl+u", "ctrl+b":
+				if m.HelpScrollY > 10 {
+					m.HelpScrollY -= 10
+				} else {
+					m.HelpScrollY = 0
+				}
+			case "pgdown", "ctrl+d", "ctrl+f":
+				m.HelpScrollY += 10
+			case "home", "g":
+				m.HelpScrollY = 0
+			case "end", "G":
+				// Approximate end scroll for now, view.go will cap it
+				m.HelpScrollY = 100
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "?":
+			m.ShowHelp = true
+			m.HelpScrollY = 0
+			return m, nil
 		case "esc":
 			// Global ESC handler
 			if m.SearchActive {

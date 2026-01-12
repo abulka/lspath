@@ -6,7 +6,12 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+
+	_ "embed"
 )
+
+//go:embed help.md
+var helpContent string
 
 // AppModel holds the TUI state.
 type AppModel struct {
@@ -47,6 +52,11 @@ type AppModel struct {
 	NormalRightFocus bool
 	FileCount        int
 	DirCount         int
+
+	// Help State
+	ShowHelp    bool
+	HelpScrollY int
+	HelpContent string
 }
 
 const (
@@ -66,5 +76,6 @@ func InitialModel() AppModel {
 		InputBuffer:     ti,
 		SelectedIdx:     0,
 		ScrollPositions: make(map[string]int),
+		HelpContent:     helpContent,
 	}
 }

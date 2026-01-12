@@ -683,11 +683,11 @@ func (m AppModel) View() string {
 		Render(finalRightViewContent)
 
 	// Footer
-	help := "Help: ↑/↓: Navigate • Tab: Switch Panel • d: Diagnostics • f/F: Flow • w: Which • q: Quit"
+	help := "Help: ↑/↓: Navigate • Tab: Switch Panel • d: Diagnostics • f/F: Flow • w: Which • ?: Help • q: Quit"
 	if m.NormalRightFocus && !m.ShowFlow {
-		help = "Details Mode: ↑/↓: Scroll • Tab: Return to Path List • q: Quit"
+		help = "Details Mode: ↑/↓: Scroll • Tab: Return to Path List • ?: Help • q: Quit"
 	} else if m.ShowFlow {
-		help = "Flow Mode: ↑/↓: Select Config File • Tab: Switch Focus • f: Return to Path List • F: Toggle Cumulative • q: Quit"
+		help = "Flow Mode: ↑/↓: Select Config File • Tab: Switch Focus • f: Return to Path List • F: Toggle Cumulative • ?: Help • q: Quit"
 	}
 
 	footer := "\n\n" + help
@@ -695,7 +695,61 @@ func (m AppModel) View() string {
 		footer = fmt.Sprintf("\n\nSearch: %s", m.InputBuffer.View())
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, right) + footer
+	mainView := lipgloss.JoinHorizontal(lipgloss.Top, left, right) + footer
+	if m.ShowHelp {
+		return m.renderHelpDialog()
+	}
+	return mainView
+}
+
+func (m *AppModel) renderHelpDialog() string {
+	w, h := m.WindowSize.Width, m.WindowSize.Height
+	if w < 20 || h < 10 {
+		return "Window too small"
+	}
+
+	helpWidth := 70
+	if helpWidth > w-4 {
+		helpWidth = w - 4
+	}
+	helpHeight := h - 6
+	if helpHeight < 5 {
+		helpHeight = 5
+	}
+
+	lines := strings.Split(m.HelpContent, "\n")
+	// Adjust height for title and border
+	contentHeight := helpHeight - 2
+
+	startY := m.HelpScrollY
+	if startY > len(lines)-contentHeight {
+		startY = len(lines) - contentHeight
+	}
+	if startY < 0 {
+		startY = 0
+	}
+	m.HelpScrollY = startY // Correct it back
+
+	endY := startY + contentHeight
+	if endY > len(lines) {
+		endY = len(lines)
+	}
+
+	visibleLines := lines[startY:endY]
+	content := strings.Join(visibleLines, "\n")
+
+	dialog := lipgloss.NewStyle().
+		Width(helpWidth).
+		Height(helpHeight).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("63")).
+		Padding(0, 1).
+		Render(content)
+
+	return lipgloss.Place(w, h,
+		lipgloss.Center, lipgloss.Center,
+		dialog,
+	)
 }
 
 func (m AppModel) Init() tea.Cmd {
