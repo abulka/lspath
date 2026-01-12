@@ -621,7 +621,7 @@ func (m AppModel) View() string {
 			}
 
 			// Stats
-			rightView.WriteString(fmt.Sprintf("\nContents:   %d files, %d directories", m.FileCount, m.DirCount))
+			rightView.WriteString(fmt.Sprintf("\n\nPath Directory Stats:   %d files, %d directories", m.FileCount, m.DirCount))
 
 			// Directory Listing
 			if m.DirectoryListing != "" {
