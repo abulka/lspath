@@ -299,20 +299,32 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 			orig := entries[firstIdx]
 			if e.SourceFile == orig.SourceFile && e.LineNumber == orig.LineNumber {
 				// Same source - likely a tracing limitation or path was already in $PATH
+				entries[i].DuplicateMessage = fmt.Sprintf(
+					"Duplicates PATH entry #%d which was already in $PATH",
+					firstIdx+1,
+				)
 				entries[i].Remediation = fmt.Sprintf(
-					"Duplicate of entry %d<br>This path was already in $PATH before line %d executed",
-					firstIdx+1, e.LineNumber,
+					"Advice: remove line %d from %s (tentative, advice may be wrong due to shell tracing limitations)",
+					firstIdx+1, e.SourceFile,
 				)
 			} else {
+				entries[i].DuplicateMessage = fmt.Sprintf(
+					"Duplicates PATH entry #%d (from line %d of %s)",
+					firstIdx+1, orig.LineNumber, orig.SourceFile,
+				)
 				entries[i].Remediation = fmt.Sprintf(
-					"Duplicate of entry %d (from line %d of %s)<br>Advice: remove line %d from %s",
-					firstIdx+1, orig.LineNumber, orig.SourceFile, e.LineNumber, e.SourceFile,
+					"Advice: remove line %d from %s (tentative, advice may be wrong due to shell tracing limitations)",
+					firstIdx+1, orig.SourceFile,
 				)
 			}
 		} else if entries[i].IsSymlink {
 			// Check if this symlink's target matches another PATH entry
 			if firstIdx, ok := resolvedPaths[resolvedPath]; ok {
 				entries[i].SymlinkPointsTo = firstIdx
+				entries[i].SymlinkMessage = fmt.Sprintf(
+					"Symlink resolves to PATH entry #%d (%s)",
+					firstIdx+1, entries[i].SymlinkTarget,
+				)
 			}
 		}
 
@@ -465,14 +477,14 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 				lastCat = cat
 			}
 
-			status := "OK     "
+			status := "OK      "
 			if e.IsDuplicate {
-				status = "DUP    "
+				status = "DUP " + model.IconDuplicate + " "
 			} else if isMissing(e.Value) {
-				status = "MISSING"
+				status = "MISSING" + model.IconMissing
 			}
 
-			sb.WriteString(fmt.Sprintf(" %2d. [%-7s] %s\n", i+1, status, e.Value))
+			sb.WriteString(fmt.Sprintf(" %2d. [%s] %s\n", i+1, status, e.Value))
 			sb.WriteString(fmt.Sprintf("    Source: %s:%d (%s)\n", e.SourceFile, e.LineNumber, e.Mode))
 			if !e.IsDuplicate && !isMissing(e.Value) {
 				sb.WriteString(fmt.Sprintf("    Stats:  %s\n", getDirStats(e.Value)))
@@ -483,29 +495,38 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 		sb.WriteString(fmt.Sprintf("PATH (%d ENTRIES) - Use --verbose (or 'v' in TUI) for details\n", len(res.PathEntries)))
 		sb.WriteString("-----------------------------------------------------------\n\n")
 		for i, e := range res.PathEntries {
-			statusLabel := ""
+			// Determine status icon
+			statusIcon := model.IconOK
+			if e.IsDuplicate || e.SymlinkPointsTo >= 0 {
+				statusIcon = model.IconDuplicate
+			} else if isMissing(e.Value) {
+				statusIcon = model.IconMissing
+			}
+
+			// Build suffix labels
+			suffixLabel := ""
 			if e.IsDuplicate {
 				origPath := res.PathEntries[e.DuplicateOf].Value
-				statusLabel = fmt.Sprintf(" [duplicate → #%d: %s]", e.DuplicateOf+1, origPath)
+				suffixLabel = fmt.Sprintf(" [duplicate → #%d: %s]", e.DuplicateOf+1, origPath)
 			} else if e.SymlinkPointsTo >= 0 {
 				targetPath := res.PathEntries[e.SymlinkPointsTo].Value
-				statusLabel = fmt.Sprintf(" [duplicate, symlink → #%d: %s]", e.SymlinkPointsTo+1, targetPath)
+				suffixLabel = fmt.Sprintf(" [duplicate, symlink → #%d: %s]", e.SymlinkPointsTo+1, targetPath)
 			} else if isMissing(e.Value) {
-				statusLabel = " [MISSING]"
+				suffixLabel = " (missing)"
 			}
 
 			// Priority indicators
 			if i == 0 {
-				statusLabel += " (highest priority)"
+				suffixLabel += " (highest priority " + model.IconPriorityHigh + ")"
 			} else if i == len(res.PathEntries)-1 {
-				statusLabel += " (lowest priority)"
+				suffixLabel += " (lowest priority " + model.IconPriorityLow + ")"
 			}
 
 			displayPath := e.Value
 			if len(displayPath) > 60 {
 				displayPath = displayPath[:57] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("%2d. %s%s\n", i+1, displayPath, statusLabel))
+			sb.WriteString(fmt.Sprintf("%2d. %s %s%s\n", i+1, statusIcon, displayPath, suffixLabel))
 		}
 		sb.WriteString("\n")
 	}
@@ -536,9 +557,9 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 	total := len(res.PathEntries)
 	sb.WriteString(fmt.Sprintf("Total PATH Entries: %d\n", total))
 	if total > 0 {
-		sb.WriteString(fmt.Sprintf("├─ OK:       %2d (%d%%)\n", okCount, okCount*100/total))
-		sb.WriteString(fmt.Sprintf("├─ Missing:  %2d (%d%%)\n", missCount, missCount*100/total))
-		sb.WriteString(fmt.Sprintf("└─ Duplicate: %2d (%d%%)\n", dupCount, dupCount*100/total))
+		sb.WriteString(fmt.Sprintf("├─ %-13s %2d (%3d%%)\n", "OK:", okCount, okCount*100/total))
+		sb.WriteString(fmt.Sprintf("├─ %-13s %2d (%3d%%)\n", fmt.Sprintf("Missing %s:", model.IconMissing), missCount, missCount*100/total))
+		sb.WriteString(fmt.Sprintf("└─ %-13s %2d (%3d%%)\n", fmt.Sprintf("Duplicates %s:", model.IconDuplicate), dupCount, dupCount*100/total))
 	}
 
 	sb.WriteString("\n")
@@ -551,7 +572,7 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 	// Duplicates
 	if dupCount > 0 {
 		foundAny = true
-		sb.WriteString(fmt.Sprintf("DUPLICATES (%d) [NOT SERIOUS]\n", dupCount))
+		sb.WriteString(fmt.Sprintf("%s DUPLICATES (%d) [NOT SERIOUS]\n", model.IconDuplicate, dupCount))
 		for i, e := range res.PathEntries {
 			if e.IsDuplicate {
 				sb.WriteString(fmt.Sprintf("%2d. %s\n", i+1, e.Value))
@@ -567,19 +588,19 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 					if len(sourceLine) > 70 {
 						sourceLine = sourceLine[:67] + "..."
 					}
-					sb.WriteString(fmt.Sprintf("    » \"%s\"\n", sourceLine))
+					sb.WriteString(fmt.Sprintf("      %s\n", sourceLine))
 				}
 
 				// Check if both entries come from the same source file and line
 				if e.SourceFile == orig.SourceFile && e.LineNumber == orig.LineNumber {
-					sb.WriteString(fmt.Sprintf("    » Duplicates entry #%d which was already in $PATH\n\n", e.DuplicateOf+1))
+					sb.WriteString(fmt.Sprintf("    » Duplicates PATH entry #%d which was already in $PATH\n\n", e.DuplicateOf+1))
 				} else {
-					sb.WriteString(fmt.Sprintf("    » Duplicates entry #%d (from line %d of %s)\n", e.DuplicateOf+1, orig.LineNumber, orig.SourceFile))
+					sb.WriteString(fmt.Sprintf("    » Duplicates PATH entry #%d (from line %d of %s)\n", e.DuplicateOf+1, orig.LineNumber, orig.SourceFile))
 					sb.WriteString(fmt.Sprintf("    » Advice: remove line %d from %s\n\n", e.LineNumber, e.SourceFile))
 				}
 			} else if e.SymlinkPointsTo >= 0 {
 				sb.WriteString(fmt.Sprintf("%2d. %s\n", i+1, e.Value))
-				sb.WriteString(fmt.Sprintf("    » Symlink resolves to entry %d (%s)\n", e.SymlinkPointsTo+1, e.SymlinkTarget))
+				sb.WriteString(fmt.Sprintf("    » Symlink resolves to PATH entry %d (%s)\n", e.SymlinkPointsTo+1, e.SymlinkTarget))
 				sb.WriteString(fmt.Sprintf("    » This is normal on modern Linux systems\n\n"))
 			}
 		}
@@ -588,7 +609,7 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 	// Missing
 	if missCount > 0 {
 		foundAny = true
-		sb.WriteString(fmt.Sprintf("MISSING DIRECTORIES (%d) [NOT SERIOUS]\n", missCount))
+		sb.WriteString(fmt.Sprintf("%s MISSING DIRECTORIES (%d) [NOT SERIOUS]\n", model.IconMissing, missCount))
 		for i, e := range res.PathEntries {
 			if isMissing(e.Value) {
 				sb.WriteString(fmt.Sprintf("%2d. %s (from %s:%d)\n", i+1, e.Value, e.SourceFile, e.LineNumber))
@@ -621,9 +642,9 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 		// User said: include same helpful labels
 		execLabel := ""
 		if n.Order == 1 {
-			execLabel = " (executed first)"
+			execLabel = " (executed first " + model.IconFirst + ")"
 		} else if n.Order == len(res.FlowNodes) {
-			execLabel = " (executed last)"
+			execLabel = " (executed last " + model.IconLast + ")"
 		}
 
 		sb.WriteString(fmt.Sprintf("%2d. %s%s%s%s%s\n", n.Order, indent, n.FilePath, desc, status, execLabel))

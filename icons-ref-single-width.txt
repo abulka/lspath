@@ -1,0 +1,46 @@
+Here are commonly available **single-width symbolic characters** (excluding emoji, double-width, and combining characters):
+
+## **Basic ASCII Symbols**
+```
+! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
+```
+
+## **Common Extended Symbols**
+
+### **Currency**
+`¢ £ ¥ € ₤ ₱ ₹ ₺ ₩`
+
+### **Mathematical**
+`± × ÷ ∞ ≠ ≤ ≥ ≈ ≡ √ ∫ ∑ ∏ ∂ ∆ ∇ ¬ ∧ ∨ ∈ ∉ ⊂ ⊃ ∪ ∩ ∅`
+
+### **Arrows**
+`← ↑ → ↓ ↔ ↕ ⇐ ⇒ ⇔`
+
+### **Miscellaneous Symbols**
+`• ◦ ‣ ∙ ● ○ ◘ ◙ ▪ ▫ □ ■ ▢ ▣ ▤ ▥ ▦ ▧ ▨ ▩ ▬ ▭ ▮ ▯`
+`★ ☆ ♀ ♂ ♠ ♣ ♥ ♦ ♪ ♫ ☺ ☻ ☼ ♨ ❖ ✁ ✂ ✃ ✄ ✆ ✇ ✈ ✉ ✎ ✏ ✐ ✑ ✒ ✓ ✔ ✕ ✖ ✗ ✘ ✙ ✚ ✛ ✜ ✝ ✞ ✟ ✠ ✡ ✢ ✣ ✤ ✥ ✦ ✧ ✩ ✪ ✫ ✬ ✭ ✮ ✯ ✰`
+`† ‡ ¶ § © ® ™ ° µ ¬ ¦`
+
+### **Box Drawing** (lightweight)
+```
+─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ ━ ┃ ┏ ┓ └ ┛ ┣ ┫ ┳ ┻ ╋
+```
+
+### **Superscript/Subscript**
+`¹ ² ³ ⁴ ⁵ ⁶ ⁷ ⁸ ⁹ ⁰ ₁ ₂ ₃ ₄ ₅ ₆ ₇ ₈ ₉ ₀`
+
+## **Tips for Avoiding Glitches:**
+1. **Stick to ASCII** for maximum compatibility
+2. **Test** unusual symbols in your target environment first
+3. **Avoid** characters above U+FFFF (which are often problematic)
+4. **Common safe blocks:** U+0020 to U+00FF (Latin-1 Supplement) and selected characters up to U+2600
+
+## **Quick Reference - Most Reliable:**
+```
+! @ # $ % ^ & * ( ) _ + - = [ ] { } | \ : ; " ' < > , . ? / ~ ` 
+§ ± © ® ™ ° • · ¶ † ‡ ¢ £ ¥ € 
+← ↑ → ↓ ↔ ∴ ∵ ∞ ≠ ≤ ≥ ≈ ≡ √ 
+◊ ♦ ♠ ♣ ♥ ♪ ♫ ☺ ☻ ★ ☆
+```
+
+These should display consistently across most terminals, chat systems, and text editors without emoji-related issues.

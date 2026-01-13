@@ -9,12 +9,16 @@ type PathEntry struct {
 	Shadows     []string // List of paths that this entry shadows (if applicable)
 	IsDuplicate bool     // True if this is a duplicate entry
 	DuplicateOf int      // Index of the original entry if this is a duplicate
-	Remediation string   // Advice on how to fix/remove if duplicate
+	Remediation string   // Advice on how to fix/remove if duplicate (HTML format for web)
 
 	// Symlink tracking
 	IsSymlink       bool   // True if this path is a symlink
 	SymlinkTarget   string // Resolved target of the symlink
 	SymlinkPointsTo int    // Index of PATH entry that this symlink resolves to (-1 if none)
+
+	// Standardized human-readable messages (DRY principle)
+	DuplicateMessage string // User-friendly duplicate message (plain text)
+	SymlinkMessage   string // User-friendly symlink message (plain text)
 
 	// Flow Attribution
 	FlowID      string   // ID of the ConfigNode this belongs to

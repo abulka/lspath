@@ -8,6 +8,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"lspath/internal/model"
 )
 
 var (
@@ -139,7 +141,23 @@ func (m AppModel) View() string {
 		idx := m.FilteredIndices[i]
 		entry := m.TraceResult.PathEntries[idx]
 
-		line := fmt.Sprintf("%d. %s", idx+1, entry.Value)
+		// Determine status icon
+		statusIcon := model.IconOK
+		if entry.IsDuplicate || entry.SymlinkPointsTo >= 0 {
+			statusIcon = model.IconDuplicate
+		} else if entry.IsSymlink {
+			statusIcon = model.IconSymlink
+		} else {
+			// Check if missing by looking at diagnostics or just use OK
+			for _, diag := range entry.Diagnostics {
+				if strings.Contains(diag, "does not exist") {
+					statusIcon = model.IconMissing
+					break
+				}
+			}
+		}
+
+		line := fmt.Sprintf("%2d. %s %s", idx+1, statusIcon, entry.Value)
 		if entry.IsDuplicate {
 			line += " (duplicate)"
 		} else if entry.SymlinkPointsTo >= 0 {
@@ -150,9 +168,9 @@ func (m AppModel) View() string {
 
 		// Priority indicators
 		if idx == 0 {
-			line += " (highest priority)"
+			line += " (highest priority " + model.IconPriorityHigh + ")"
 		} else if idx == len(m.TraceResult.PathEntries)-1 {
-			line += " (lowest priority)"
+			line += " (lowest priority " + model.IconPriorityLow + ")"
 		}
 
 		// Truncate
@@ -385,9 +403,9 @@ func (m AppModel) View() string {
 			line := fmt.Sprintf("%d. %s%s%s%s%s", node.Order, indent, name, contStr, note, statusStr)
 
 			if i == 0 {
-				line += " (executed first)"
+				line += " (executed first " + model.IconFirst + ")"
 			} else if i == len(m.TraceResult.FlowNodes)-1 {
-				line += " (executed last)"
+				line += " (executed last " + model.IconLast + ")"
 			}
 
 			// If NotExecuted, maybe dim it even more?
@@ -561,11 +579,11 @@ func (m AppModel) View() string {
 			dirLine := fmt.Sprintf("\nDirectory:  %s", entry.Value)
 			if !m.ShowDiagnostics {
 				if entry.IsDuplicate {
-					origPath := m.TraceResult.PathEntries[entry.DuplicateOf].Value
-					dirLine += fmt.Sprintf("  (Duplicate → #%d: %s. Press 'd' for details)", entry.DuplicateOf+1, origPath)
+					dirLine += fmt.Sprintf("  (%s. Press 'd' for details)", entry.DuplicateMessage)
 				} else if entry.SymlinkPointsTo >= 0 {
-					targetPath := m.TraceResult.PathEntries[entry.SymlinkPointsTo].Value
-					dirLine += fmt.Sprintf("  (Symlink → #%d: %s. Press 'd' for details)", entry.SymlinkPointsTo+1, targetPath)
+					dirLine += fmt.Sprintf("  (%s. Press 'd' for details)", entry.SymlinkMessage)
+				} else if entry.IsSymlink {
+					dirLine += fmt.Sprintf("  (symlink %s → %s)", model.IconSymlink, entry.SymlinkTarget)
 				}
 			}
 			rightView.WriteString(dirLine)
@@ -618,11 +636,11 @@ func (m AppModel) View() string {
 
 			if m.ShowDiagnostics {
 				if entry.IsDuplicate {
-					rightView.WriteString(adviceStyle.Render(fmt.Sprintf("\n\n⚠️ DUPLICATE detected!\n%s", entry.Remediation)))
+					rightView.WriteString(adviceStyle.Render(fmt.Sprintf("\n\n⚠️ DUPLICATE %s detected!\n%s", model.IconDuplicate, entry.DuplicateMessage)))
 				} else if entry.SymlinkPointsTo >= 0 {
-					rightView.WriteString(adviceStyle.Render(fmt.Sprintf("\n\n🔗 SYMLINK detected\nThis path is a symbolic link to: %s\nPoints to PATH entry #%d\n\nThis is normal on modern Linux systems.", entry.SymlinkTarget, entry.SymlinkPointsTo+1)))
+					rightView.WriteString(adviceStyle.Render(fmt.Sprintf("\n\n🔗 SYMLINK %s%s detected\n%s\n\nThis is normal on modern Linux systems.", model.IconDuplicate, model.IconSymlink, entry.SymlinkMessage)))
 				} else {
-					rightView.WriteString("\n\n✅ No issues detected.")
+					rightView.WriteString("\n\n" + model.IconOK + " No issues detected.")
 				}
 			}
 

@@ -267,16 +267,38 @@ function renderPathList(containerId, indices, selectedIdx, viewType) {
         nameSpan.textContent = label;
         div.appendChild(nameSpan);
 
+        // Priority indicators
+        if (dataIdx === 0) {
+            const priority = document.createElement('span');
+            priority.style.marginLeft = '10px';
+            priority.style.fontSize = '0.8em';
+            priority.style.color = 'var(--accent-bright)';
+            priority.textContent = `(highest priority ${Icons.PriorityHigh})`;
+            div.appendChild(priority);
+        } else if (dataIdx === state.data.PathEntries.length - 1) {
+            const priority = document.createElement('span');
+            priority.style.marginLeft = '10px';
+            priority.style.fontSize = '0.8em';
+            priority.style.color = 'var(--text-muted)';
+            priority.textContent = `(lowest priority ${Icons.PriorityLow})`;
+            div.appendChild(priority);
+        }
+
         if (entry.IsDuplicate) {
             const status = document.createElement('span');
             status.className = 'status-pill';
-            status.textContent = 'dup';
+            status.textContent = `dup ${Icons.Duplicate}`;
             div.appendChild(status);
         } else if (entry.SymlinkPointsTo >= 0) {
             const status = document.createElement('span');
             status.className = 'status-pill';
             status.style.background = '#3b82f6';
-            status.textContent = 'symlink';
+            status.textContent = `symlink ${Icons.Duplicate}${Icons.Symlink}`;
+            div.appendChild(status);
+        } else if (entry.Diagnostics && entry.Diagnostics.some(d => d.includes('does not exist'))) {
+            const status = document.createElement('span');
+            status.className = 'status-pill';
+            status.textContent = `missing ${Icons.Missing}`;
             div.appendChild(status);
         }
 
@@ -346,16 +368,15 @@ async function renderDetails() {
     if (entry.IsDuplicate) {
         html += `
             <div class="alert alert-warning">
-                <strong>⚠️ DUPLICATE DETECTED</strong><br>
-                ${entry.Remediation}
+                <strong>${Icons.Duplicate} Duplicate detected</strong><br>
+                ${entry.DuplicateMessage}
             </div>
         `;
     } else if (entry.SymlinkPointsTo >= 0) {
         html += `
             <div class="alert alert-warning" style="background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.3);">
-                <strong>🔗 SYMLINK DETECTED</strong><br>
-                This path is a symbolic link to: <strong>${entry.SymlinkTarget}</strong><br>
-                Points to PATH entry #${entry.SymlinkPointsTo + 1}<br>
+                <strong>🔗 SYMLINK ${Icons.Duplicate}${Icons.Symlink} DETECTED</strong><br>
+                ${entry.SymlinkMessage}<br>
                 <em style="color:var(--text-muted);font-size:0.9em;">This is normal on modern Linux systems.</em>
             </div>
         `;
@@ -440,7 +461,12 @@ function renderFlowNodes() {
 
         const div = document.createElement('div');
         div.className = 'flow-node' + (idx === state.flowNodeIndex ? ' active' : '');
-        div.textContent = node.FilePath.split('/').pop();
+        
+        let nodeText = node.FilePath.split('/').pop();
+        if (idx === 0) nodeText += ' ' + Icons.First;
+        if (idx === state.data.FlowNodes.length - 1) nodeText += ' ' + Icons.Last;
+        
+        div.textContent = nodeText;
         div.title = node.FilePath;
         div.onclick = () => {
             state.flowNodeIndex = idx;
