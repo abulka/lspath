@@ -485,7 +485,11 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 			}
 
 			sb.WriteString(fmt.Sprintf(" %2d. [%s] %s\n", i+1, status, e.Value))
-			sb.WriteString(fmt.Sprintf("    Source: %s:%d (%s)\n", e.SourceFile, e.LineNumber, e.Mode))
+			sourceLine := fmt.Sprintf("    Source: %s:%d", e.SourceFile, e.LineNumber)
+			if e.Mode != "Unknown" {
+				sourceLine += fmt.Sprintf(" (Startup Phase: %s)", e.Mode)
+			}
+			sb.WriteString(sourceLine + "\n")
 			if !e.IsDuplicate && !isMissing(e.Value) {
 				sb.WriteString(fmt.Sprintf("    Stats:  %s\n", getDirStats(e.Value)))
 			}

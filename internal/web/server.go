@@ -45,8 +45,10 @@ func StartServer() {
 	// API Endpoints
 	mux.HandleFunc("/api/trace", handleTrace)
 	mux.HandleFunc("/api/file", handleFile)
+	mux.HandleFunc("/api/line-context", handleLineContext)
 	mux.HandleFunc("/api/ls", handleLs)
 	mux.HandleFunc("/api/which", handleWhich)
+	mux.HandleFunc("/api/help", handleHelp)
 
 	port := "8080"
 	fmt.Printf("Starting lspath web server at http://localhost:%s\n", port)
@@ -124,6 +126,27 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(content)
+}
+
+func handleLineContext(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	lineNumStr := r.URL.Query().Get("line")
+	if path == "" || lineNumStr == "" {
+		http.Error(w, "path and line are required", 400)
+		return
+	}
+
+	lineNum := 0
+	_, err := fmt.Sscanf(lineNumStr, "%d", &lineNum)
+	if err != nil {
+		http.Error(w, "invalid line number", 400)
+		return
+	}
+
+	context := model.GetLineContext(path, lineNum)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(context)
 }
 
 type LsEntry struct {
@@ -239,4 +262,18 @@ func handleWhich(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(matches)
+}
+
+func handleHelp(w http.ResponseWriter, r *http.Request) {
+	content, err := os.ReadFile("internal/tui/help.md")
+	if err != nil {
+		// Try fallback if running from within internal/web
+		content, err = os.ReadFile("../../internal/tui/help.md")
+		if err != nil {
+			http.Error(w, "Help file not found", 404)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "text/markdown")
+	w.Write(content)
 }

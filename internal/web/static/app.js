@@ -9,6 +9,7 @@ const state = {
     // Flow View State
     flowNodeIndex: 0,
     cumulative: true,
+    previewVisible: false,
     flowSelectedIndex: 0,
     fileCache: {},
     flowInitialized: false,
@@ -164,10 +165,27 @@ function switchView(viewId) {
     // Logic for specific views
     if (viewId === 'flow' && !state.flowInitialized) {
         initializeFlowMode();
-        updateCumulativeButton();
+        updateToggles();
+    } else if (viewId === 'help') {
+        fetchHelp();
     }
 
     renderAll();
+}
+
+async function fetchHelp() {
+    const content = document.getElementById('help-content');
+    if (!content || content.dataset.loaded === 'true') return;
+
+    try {
+        const resp = await fetch('/api/help');
+        if (!resp.ok) throw new Error("Could not load help");
+        const text = await resp.text();
+        content.textContent = text;
+        content.dataset.loaded = 'true';
+    } catch (e) {
+        content.textContent = "Error loading help content: " + e.message;
+    }
 }
 
 function initializeFlowMode() {
@@ -271,14 +289,14 @@ function renderPathList(containerId, indices, selectedIdx, viewType) {
         if (dataIdx === 0) {
             const priority = document.createElement('span');
             priority.style.marginLeft = '10px';
-            priority.style.fontSize = '0.8em';
+            priority.style.fontSize = '1.1em';
             priority.style.color = 'var(--accent-bright)';
             priority.textContent = `(highest priority ${Icons.PriorityHigh})`;
             div.appendChild(priority);
         } else if (dataIdx === state.data.PathEntries.length - 1) {
             const priority = document.createElement('span');
             priority.style.marginLeft = '10px';
-            priority.style.fontSize = '0.8em';
+            priority.style.fontSize = '1.1em';
             priority.style.color = 'var(--text-muted)';
             priority.textContent = `(lowest priority ${Icons.PriorityLow})`;
             div.appendChild(priority);
@@ -356,14 +374,51 @@ async function renderDetails() {
                 <div class="detail-value">${entry.Value}</div>
             </div>
             <div class="detail-row">
-                <div class="detail-label">Source</div>
-                <div class="detail-value">${entry.SourceFile}:${entry.LineNumber}</div>
-            </div>
-            <div class="detail-row">
-                <div class="detail-label">Shell Mode</div>
-                <div class="detail-value">${entry.Mode}</div>
+                <div class="detail-label">Caused by</div>
+                <div class="detail-value">
+                    ${entry.SourceFile}:${entry.LineNumber}
+                    ${entry.Mode !== 'Unknown' ? `<span style="color:var(--text-muted); font-size:0.9em; margin-left:8px;">(Startup Phase: ${entry.Mode})</span>` : ''}
+                </div>
             </div>
     `;
+
+    // Fetch and display the source line context
+    try {
+        const lineResp = await fetch(`/api/line-context?path=${encodeURIComponent(entry.SourceFile)}&line=${entry.LineNumber}`);
+        if (lineResp.ok) {
+            const lineContext = await lineResp.json();
+            if (!lineContext.ErrorMsg) {
+                html += `
+                    <div class="detail-row" style="margin-top: 8px;">
+                        <div class="detail-label">Source Line Context (${entry.SourceFile})</div>
+                        <div class="detail-value">
+                            <div style="background: var(--bg-secondary); padding: 6px 8px; border-radius: 4px; font-family: monospace; font-size: 0.9em; line-height: 1.4; overflow-x: auto;">
+                `;
+                if (lineContext.HasBefore2) {
+                    html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber - 2).padStart(2, ' ')}  ${escapeHtml(lineContext.Before2)}</div>`;
+                }
+                if (lineContext.HasBefore1) {
+                    html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber - 1).padStart(2, ' ')}  ${escapeHtml(lineContext.Before1)}</div>`;
+                }
+                html += `<div style="color: var(--accent); font-weight: bold;"> ${String(lineContext.LineNumber).padStart(2, ' ')}  ${escapeHtml(lineContext.Target)}</div>`;
+                if (lineContext.HasAfter1) {
+                    html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber + 1).padStart(2, ' ')}  ${escapeHtml(lineContext.After1)}</div>`;
+                }
+                if (lineContext.HasAfter2) {
+                    html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber + 2).padStart(2, ' ')}  ${escapeHtml(lineContext.After2)}</div>`;
+                }
+                html += `
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+    } catch (e) {
+        // Silently ignore if line context can't be fetched
+    }
+
+    html += `</div>`;
 
     if (entry.IsDuplicate) {
         html += `
@@ -439,6 +494,12 @@ function formatSize(bytes) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     if (i === 0) return bytes.toString();
     return (bytes / Math.pow(k, i)).toFixed(1) + sizes[i];
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function renderFlowNodes() {
@@ -535,16 +596,60 @@ function applyPreview(text) {
 }
 
 function toggleCumulative() {
-    state.cumulative = !state.cumulative;
-    updateCumulativeButton();
+    const checkbox = document.getElementById('check-cumulative');
+    if (checkbox) {
+        state.cumulative = checkbox.checked;
+    } else {
+        state.cumulative = !state.cumulative;
+    }
     renderAll();
 }
 
-function updateCumulativeButton() {
-    const btn = document.getElementById('toggle-cumulative');
-    if (btn) {
-        if (state.cumulative) btn.classList.add('active');
-        else btn.classList.remove('active');
+function togglePreview() {
+    const checkbox = document.getElementById('check-preview');
+    if (checkbox) {
+        state.previewVisible = checkbox.checked;
+    } else {
+        state.previewVisible = !state.previewVisible;
+    }
+
+    const preview = document.getElementById('preview-container');
+    const splitter = document.getElementById('flow-splitter');
+    const listPanel = document.getElementById('flow-list-panel');
+
+    if (state.previewVisible) {
+        preview.style.display = 'flex';
+        splitter.style.display = 'block';
+        listPanel.style.flex = '0 0 40%'; // Restore split to match CSS
+    } else {
+        preview.style.display = 'none';
+        splitter.style.display = 'none';
+        listPanel.style.flex = '1'; // Fill whole space
+    }
+}
+
+function updateToggles() {
+    const cumCheck = document.getElementById('check-cumulative');
+    if (cumCheck) cumCheck.checked = state.cumulative;
+
+    const preCheck = document.getElementById('check-preview');
+    if (preCheck) preCheck.checked = state.previewVisible;
+
+    // Apply preview visibility immediately
+    const preview = document.getElementById('preview-container');
+    const splitter = document.getElementById('flow-splitter');
+    const listPanel = document.getElementById('flow-list-panel');
+
+    if (preview && splitter && listPanel) {
+        if (state.previewVisible) {
+            preview.style.display = 'flex';
+            splitter.style.display = 'block';
+            listPanel.style.flex = '0 0 40%';
+        } else {
+            preview.style.display = 'none';
+            splitter.style.display = 'none';
+            listPanel.style.flex = '1';
+        }
     }
 }
 

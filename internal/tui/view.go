@@ -587,9 +587,32 @@ func (m AppModel) View() string {
 				}
 			}
 			rightView.WriteString(dirLine)
-			rightView.WriteString(fmt.Sprintf("\nSource:     %s", entry.SourceFile))
+
+			causedBy := fmt.Sprintf("\nCaused by:  %s", entry.SourceFile)
+			if entry.Mode != "Unknown" {
+				causedBy += fmt.Sprintf(" (Startup Phase: %s)", entry.Mode)
+			}
+			rightView.WriteString(causedBy)
 			rightView.WriteString(fmt.Sprintf("\nLine:       %d", entry.LineNumber))
-			rightView.WriteString(fmt.Sprintf("\nMode:       %s", entry.Mode))
+
+			// Show the actual line from the config file with context
+			lineContext := model.GetLineContext(entry.SourceFile, entry.LineNumber)
+			if lineContext.ErrorMsg == "" {
+				rightView.WriteString(fmt.Sprintf("\n\n--- Source Line Context (%s) ---", entry.SourceFile))
+				if lineContext.HasBefore2 {
+					rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber-2, lineContext.Before2))
+				}
+				if lineContext.HasBefore1 {
+					rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber-1, lineContext.Before1))
+				}
+				rightView.WriteString(fmt.Sprintf("\n» %4d  %s", lineContext.LineNumber, lineContext.Target))
+				if lineContext.HasAfter1 {
+					rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber+1, lineContext.After1))
+				}
+				if lineContext.HasAfter2 {
+					rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber+2, lineContext.After2))
+				}
+			}
 
 			// Search Match Details
 			if m.SearchActive {

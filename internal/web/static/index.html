@@ -102,8 +102,8 @@
 
         /* Lists & Details Panels */
         .list-panel {
-            flex: 0 0 60%;
-            /* 60% of screen for paths */
+            flex: 0 0 40%;
+            /* 40% of screen for paths, making details wider */
             border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
@@ -114,12 +114,20 @@
         .details-panel {
             flex: 1;
             /* Fills remaining space */
-            padding: 30px;
+            padding: 0 30px 30px 30px;
+            /* Removed top padding to reduce whitespace */
             overflow-y: auto;
             background: var(--bg-deep);
             display: flex;
             flex-direction: column;
             min-width: 0;
+        }
+
+        #details-header h1 {
+            margin-top: 10px;
+            font-size: large;
+            /* Controlled top margin */
+            margin-bottom: 20px;
         }
 
         /* Search Bar */
@@ -134,8 +142,8 @@
 
         .search-wrapper {
             position: relative;
-            flex: 0 0 50%;
-            /* 50% width as requested */
+            flex: 0 0 70%;
+            /* Widened as requested */
             display: flex;
             align-items: center;
         }
@@ -189,6 +197,51 @@
 
         #search-input:focus {
             border-color: var(--accent);
+        }
+
+        /* Switch/Checkbox Styles */
+        .switch-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8em;
+            color: var(--text-color);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .switch-container input {
+            display: none;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 32px;
+            height: 18px;
+            background-color: var(--border);
+            border-radius: 20px;
+            transition: .3s;
+        }
+
+        .switch:before {
+            position: absolute;
+            content: "";
+            height: 12px;
+            width: 12px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            border-radius: 50%;
+            transition: .3s;
+        }
+
+        input:checked+.switch {
+            background-color: var(--accent);
+        }
+
+        input:checked+.switch:before {
+            transform: translateX(14px);
         }
 
         /* PATH List */
@@ -402,29 +455,44 @@
         }
 
         /* Diagnostics Report Area */
-        #diagnostics-view {
-            padding: 40px;
-            overflow-y: auto;
+       .doc-wrapper {
+            padding: 30px 40px;
+            width: 100%;
+            max-width: 1600px; /* Made wider and consistent */
+            margin: 0 auto;
+            box-sizing: border-box;
             display: flex;
             flex-direction: column;
-            max-width: 1200px;
-            /* Constrain width for readability */
-            margin: 0 auto;
-            /* Center it */
-            width: 100%;
-            box-sizing: border-box;
+            height: 100%;
         }
 
-        #report-content {
+        .doc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .doc-header h1 {
+            margin: 0;
+            color: var(--accent);
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        .doc-content {
             font-family: 'JetBrains Mono', monospace;
             background: var(--bg-color);
             padding: 30px;
-            border-radius: 12px;
             border: 1px solid var(--border);
+            /* Removed border-radius */
             white-space: pre-wrap;
             line-height: 1.6;
             flex: 1;
-            /* Allow to grow */
+            overflow-y: auto;
+            color: var(--text-color);
         }
 
         /* Detail Elements */
@@ -469,7 +537,6 @@
         }
 
         /* Controls */
-        #toggle-cumulative,
         #toggle-verbose {
             font-size: 0.8em;
             background: var(--bg-deep);
@@ -481,12 +548,10 @@
             transition: all 0.2s;
         }
 
-        #toggle-cumulative:hover,
         #toggle-verbose:hover {
             border-color: var(--accent);
         }
 
-        #toggle-cumulative.active,
         #toggle-verbose.active {
             background: var(--magenta);
             color: #fff;
@@ -510,6 +575,9 @@
         <div class="nav-item" onclick="switchView('diagnostics')" id="nav-diagnostics">
             <span>🛡️</span> Diagnostics
         </div>
+        <div class="nav-item" onclick="switchView('help')" id="nav-help">
+            <span>❓</span> Help
+        </div>
     </nav>
 
     <main id="main-view">
@@ -531,6 +599,7 @@
             <div class="details-panel" id="explorer-details-panel">
                 <div id="details-header">
                     <h1>Details</h1>
+                    <p>Details about the selected PATH directory.</p>
                 </div>
                 <div id="details-content">
                     <p style="color:var(--text-muted)">Select an entry to see information about that directory.</p>
@@ -552,8 +621,19 @@
                 <div id="flow-split">
                     <div class="list-panel" id="flow-list-panel">
                         <div id="flow-subheader">
-                            <span style="font-size:0.75em; color:var(--text-muted)">PATH Evolution</span>
-                            <button id="toggle-cumulative" onclick="toggleCumulative()">Cumulative View</button>
+                            <span style="font-size:0.75em; color:var(--text-muted); margin-right: 15px;">PATH Evolution</span>
+                            <div style="display:flex; gap:12px;">
+                                <label class="switch-container" title="Shows you exactly what your PATH looked like at that point in time.">
+                                    <input type="checkbox" id="check-cumulative" checked onchange="toggleCumulative()">
+                                    <span class="switch"></span>
+                                    Cumulative
+                                </label>
+                                <label class="switch-container" title="Inspect the code in your config files that modifies the PATH.">
+                                    <input type="checkbox" id="check-preview" onchange="togglePreview()">
+                                    <span class="switch"></span>
+                                    Preview
+                                </label>
+                            </div>
                         </div>
                         <div class="items-list" id="flow-path-list">
                             <!-- Filtered path entries for flow -->
@@ -572,14 +652,28 @@
 
         <!-- Diagnostics View -->
         <section id="diagnostics-panel" class="view-panel">
-            <div id="diagnostics-view">
-                <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 20px;">
+            <div class="doc-wrapper">
+                <div class="doc-header">
                     <h1>Diagnostic Report</h1>
                     <div style="display:flex; gap: 10px; align-items: center;">
                         <button id="toggle-verbose" onclick="toggleVerbose()">Verbose Report</button>
                     </div>
                 </div>
-                <div id="report-content">Loading report...</div>
+                <!-- ID kept for JS targeting, class added for styling -->
+                <div id="report-content" class="doc-content">Loading report...</div>
+            </div>
+        </section>
+
+        <!-- Help View -->
+        <section id="help-panel" class="view-panel">
+            <div class="doc-wrapper">
+                <div class="doc-header">
+                    <h1>User Guide</h1>
+                </div>
+                <!-- ID kept for JS targeting, class added for styling -->
+                <div id="help-content" class="doc-content">
+                    Loading help...
+                </div>
             </div>
         </section>
     </main>
