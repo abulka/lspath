@@ -74,7 +74,7 @@ func runReportMode(outputFile string, verbose bool) {
 	}()
 
 	analyzer := trace.NewAnalyzer()
-	result := analyzer.Analyze(allEvents)
+	result := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
 	report := trace.GenerateReport(result, verbose)
 
 	if outputFile != "" {
@@ -112,7 +112,7 @@ func runJsonMode() {
 	}()
 
 	analyzer := trace.NewAnalyzer()
-	result := analyzer.Analyze(allEvents)
+	result := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")

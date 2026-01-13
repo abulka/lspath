@@ -55,7 +55,7 @@ func NewAnalyzer() *Analyzer {
 	return &Analyzer{}
 }
 
-func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
+func (a *Analyzer) Analyze(events []model.TraceEvent, initialPath string) model.AnalysisResult {
 	var flowNodes []model.ConfigNode
 	var lastFile string
 	var currentNode *model.ConfigNode
@@ -73,8 +73,39 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 	// If we reuse, we should reuse the *first* matching instance?
 	// Or simpler: Map Value -> Entry. But duplicates confuse map.
 
+	// Initialize lastPathStr with the baseline so diffs work correctly
+	lastPathStr = initialPath
+
 	// Maintain current list of `[]*model.PathEntry`.
 	var currentEntries []*model.PathEntry
+
+	// --- NEW LOGIC: Pre-populate from the passed argument ---
+	if initialPath != "" {
+		// Prepend Node 0 for System configuration
+		flowNodes = append(flowNodes, model.ConfigNode{
+			ID:          "node-0",
+			FilePath:    "System (Default)",
+			Order:       0,
+			Depth:       0,
+			Description: "Initial environment PATH",
+			Entries:     []int{},
+		})
+
+		parts := strings.Split(initialPath, ":")
+		for _, p := range parts {
+			if p == "" {
+				continue
+			}
+			currentEntries = append(currentEntries, &model.PathEntry{
+				Value:      p,
+				SourceFile: "System (Default)", // Or "(initial environment)"
+				LineNumber: 0,
+				Mode:       "System",
+				FlowID:     "node-0", // Assign to the system node
+			})
+		}
+	}
+	// -------------------------------------------------------
 
 	// Maintain a call stack to infer depth manually since zsh trace depth is unreliable for sourcing.
 	// Stack contains file paths.
@@ -419,6 +450,9 @@ func (a *Analyzer) Analyze(events []model.TraceEvent) model.AnalysisResult {
 }
 
 func getPathDescription(path string) string {
+	if path == "System (Default)" {
+		return "Initial environment PATH"
+	}
 	if strings.HasPrefix(path, "/etc/") {
 		if strings.Contains(path, "env") {
 			return "(system-wide env)"
@@ -485,7 +519,14 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 			}
 
 			sb.WriteString(fmt.Sprintf(" %2d. [%s] %s\n", i+1, status, e.Value))
-			sourceLine := fmt.Sprintf("    Source: %s:%d", e.SourceFile, e.LineNumber)
+
+			var sourceLine string
+			if e.LineNumber == 0 {
+				sourceLine = fmt.Sprintf("    Source: %s", e.SourceFile)
+			} else {
+				sourceLine = fmt.Sprintf("    Source: %s:%d", e.SourceFile, e.LineNumber)
+			}
+
 			if e.Mode != "Unknown" {
 				sourceLine += fmt.Sprintf(" (Startup Phase: %s)", e.Mode)
 			}
@@ -687,10 +728,12 @@ var zshStandard = []standardConfig{
 
 var bashStandard = []standardConfig{
 	{"/etc/profile", 1},
-	{"/.bash_profile", 2},
-	{"/.bash_login", 3},
-	{"/.profile", 4},
-	{"/.bashrc", 5},
+	{"/etc/bash.bashrc", 2},
+	{"/etc/bashrc", 3},
+	{"/.bash_profile", 4},
+	{"/.bash_login", 5},
+	{"/.profile", 6},
+	{"/.bashrc", 7},
 }
 
 // detectShellFromNodes determines if the executed files are bash or zsh
@@ -839,6 +882,9 @@ func GuessShellMode(filename string) string {
 // isImportantConfig checks if a file is a standard shell configuration file
 // that should be shown in the flow even if empty.
 func isImportantConfig(path string) bool {
+	if path == "System (Default)" {
+		return true
+	}
 	// Check standard zsh/bash files
 	// Use Contains or Suffix to handle absolute paths
 	keys := []string{
@@ -846,9 +892,8 @@ func isImportantConfig(path string) bool {
 		"zprofile", ".zprofile",
 		"zshrc", ".zshrc",
 		"zlogin", ".zlogin",
-		"zlogout", ".zlogout",
 		"bash_profile", ".bash_profile",
-		"bashrc", ".bashrc",
+		"bashrc", ".bashrc", "bash.bashrc",
 		"profile", ".profile",
 		"bash_login",
 	}

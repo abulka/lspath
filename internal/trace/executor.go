@@ -7,6 +7,18 @@ import (
 	"os/exec"
 )
 
+// Define the baseline path here.
+// Export it so main.go or the analyzer can see it if needed.
+// This is a subtle point about how your tool works:
+// The Tool Creates a Sandbox: In executor.go, your tool explicitly strips the user's existing PATH and forces PATH=/usr/bin:/bin.... It does this to create a "clean slate" so it can see exactly how the config files reconstruct the path.
+// It IS Hardcoded (by design): Currently, your executor.go does hardcode these paths (line 38 of the file you sent).
+// Is this bad?
+// Yes: If you run this on a system where /bin doesn't exist (like some distinct NixOS setups or Windows), the shell might fail to find basic commands like rm or mkdir.
+// No: For 99% of macOS and Linux systems, these paths are standard.
+// Better approach for the Executor:
+// Instead of hardcoding /usr/bin..., the executor could technically capture the system default path (confstr _CS_PATH on POSIX), but that is hard to get reliably from Go without CGO.
+const SandboxInitialPath = "/usr/bin:/bin:/usr/sbin:/sbin"
+
 // RunTrace executes the shell trace command and returns the stderr pipe.
 func RunTrace(shell Shell) (io.ReadCloser, error) {
 	cmd := exec.Command("sh", "-c", shell.GetTraceCommand())
@@ -24,7 +36,7 @@ func RunTrace(shell Shell) (io.ReadCloser, error) {
 	}
 	// Set a minimal standard PATH to ensure basic shell tools (like rm, mkdir, zsh itself) work.
 	// This forces the shell startup scripts to reconstruct the full user PATH.
-	env = append(env, "PATH=/usr/bin:/bin:/usr/sbin:/sbin")
+	env = append(env, "PATH="+SandboxInitialPath)
 
 	cmd.Env = env
 	cmd.Env = append(cmd.Env, "PS4="+shell.GetPS4())

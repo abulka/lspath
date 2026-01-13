@@ -376,7 +376,7 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.ShowFlow {
 				m.loadSelectedFile()
 			}
-		case "F":
+		case "c":
 			// Toggle Cumulative Mode
 			m.CumulativeFlow = !m.CumulativeFlow
 			if m.CumulativeFlow {
@@ -676,7 +676,7 @@ func InitTraceCmd() tea.Cmd {
 		}
 
 		analyzer := trace.NewAnalyzer()
-		res := analyzer.Analyze(allEvents)
+		res := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
 		return MsgTraceReady(res)
 	}
 }

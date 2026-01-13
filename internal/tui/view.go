@@ -593,11 +593,15 @@ func (m AppModel) View() string {
 				causedBy += fmt.Sprintf(" (Startup Phase: %s)", entry.Mode)
 			}
 			rightView.WriteString(causedBy)
-			rightView.WriteString(fmt.Sprintf("\nLine:       %d", entry.LineNumber))
+			if entry.SourceFile == "System (Default)" && entry.LineNumber == 0 {
+				rightView.WriteString("\nLine:       N/A")
+			} else {
+				rightView.WriteString(fmt.Sprintf("\nLine:       %d", entry.LineNumber))
+			}
 
 			// Show the actual line from the config file with context
 			lineContext := model.GetLineContext(entry.SourceFile, entry.LineNumber)
-			if lineContext.ErrorMsg == "" {
+			if lineContext.ErrorMsg == "" && (entry.LineNumber > 0 || entry.SourceFile != "System (Default)") {
 				rightView.WriteString(fmt.Sprintf("\n\n--- Source Line Context (%s) ---", entry.SourceFile))
 				if lineContext.HasBefore2 {
 					rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber-2, lineContext.Before2))
@@ -730,11 +734,11 @@ func (m AppModel) View() string {
 		Render(finalRightViewContent)
 
 	// Footer
-	help := "Help: ↑/↓: Navigate • Tab: Switch Panel • d: Diagnostics • f/F: Flow • w: Which • ?: Help • q: Quit"
+	help := "Help: ↑/↓: Navigate • Tab: Switch Panel • d: Diagnostics • f/c: Flow • w: Which • ?: Help • q: Quit"
 	if m.NormalRightFocus && !m.ShowFlow {
 		help = "Details Mode: ↑/↓: Scroll • Tab: Return to Path List • ?: Help • q: Quit"
 	} else if m.ShowFlow {
-		help = "Flow Mode: ↑/↓: Select Config File • Tab: Switch Focus • f: Return to Path List • F: Toggle Cumulative • ?: Help • q: Quit"
+		help = "Flow Mode: ↑/↓: Select Config File • Tab: Switch Focus • f: Return to Path List • c: Toggle Cumulative • ?: Help • q: Quit"
 	}
 
 	footer := "\n\n" + help

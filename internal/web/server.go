@@ -84,7 +84,7 @@ func handleTrace(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	analyzer := trace.NewAnalyzer()
-	result := analyzer.Analyze(allEvents)
+	result := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
 
 	// Generate reports for web view
 	report := trace.GenerateReport(result, false)
@@ -213,7 +213,7 @@ func handleWhich(w http.ResponseWriter, r *http.Request) {
 	}
 
 	analyzer := trace.NewAnalyzer()
-	result := analyzer.Analyze(allEvents)
+	result := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
 
 	type WhichMatch struct {
 		Index       int    `json:"Index"`

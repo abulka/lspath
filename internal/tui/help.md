@@ -27,7 +27,7 @@ Flow Mode allows you to visualize the "evolution" of your PATH. As your shell st
 • Press 'f' to enter Flow Mode.
 • Use the arrow keys to step through each configuration file.
 • The list on the left will highlight which PATH entries were added at that specific step.
-• Press 'F' to toggle "Cumulative View" - this shows you exactly what your PATH looked like at that point in time.
+• Press 'c' to toggle "Cumulative View" - this shows you exactly what your PATH looked like at that point in time.
 
 WHICH MODE
 ----------
@@ -63,7 +63,7 @@ GLOBAL ACTIONS
 
 MODE SPECIFIC
 • w           : Run 'which' on a command (Which Mode)
-• F           : Toggle Cumulative view (Flow Mode)
+• c           : Toggle Cumulative view (Flow Mode)
 
 
 ABOUT

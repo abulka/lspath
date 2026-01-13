@@ -64,21 +64,41 @@ function setupInputs() {
 
     // Keyboard navigation
     document.addEventListener('keydown', (e) => {
-        if (state.currentView === 'diagnostics') return;
+        // Preserve standard browser shortcuts (Ctrl+F, Cmd+R, etc.)
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-        if (e.key === 'ArrowDown' || e.key === 'j') {
+        // Global view toggles (shortcuts) - only if not typing in an input
+        if (document.activeElement.tagName !== 'INPUT') {
+            if (e.key === 'f' && !e.shiftKey) {
+                e.preventDefault();
+                switchView(state.currentView === 'flow' ? 'main' : 'flow');
+                return;
+            } else if (e.key === 'd' && !e.shiftKey) {
+                e.preventDefault();
+                switchView(state.currentView === 'diagnostics' ? 'main' : 'diagnostics');
+                return;
+            } else if ((e.key === 'h' && !e.shiftKey) || e.key === '?') {
+                e.preventDefault();
+                switchView(state.currentView === 'help' ? 'main' : 'help');
+                return;
+            }
+        }
+
+        if (state.currentView === 'diagnostics' && e.key !== 'd') return;
+
+        if ((e.key === 'ArrowDown' || e.key === 'j') && !e.shiftKey) {
             e.preventDefault();
             moveSelection(1);
-        } else if (e.key === 'ArrowUp' || e.key === 'k') {
+        } else if ((e.key === 'ArrowUp' || e.key === 'k') && !e.shiftKey) {
             e.preventDefault();
             moveSelection(-1);
         } else if (e.key === 'Escape') {
             clearSearch();
         } else if (state.currentView === 'flow') {
-            if (e.key === 'ArrowLeft' || e.key === 'h') {
+            if (e.key === 'ArrowLeft') {
                 e.preventDefault();
                 moveFlowNode(-1);
-            } else if (e.key === 'ArrowRight' || e.key === 'l') {
+            } else if (e.key === 'ArrowRight' || (e.key === 'l' && !e.shiftKey)) {
                 e.preventDefault();
                 moveFlowNode(1);
             }
@@ -190,12 +210,19 @@ async function fetchHelp() {
 
 function initializeFlowMode() {
     if (!state.data) return;
-    // Default to .zshrc or first node
-    const zshrcIdx = state.data.FlowNodes.findIndex(n => n.FilePath.endsWith('.zshrc'));
-    if (zshrcIdx !== -1) {
-        state.flowNodeIndex = zshrcIdx;
+    
+    // Default to "System (Default)" node if it exists (usually the first one)
+    const systemIdx = state.data.FlowNodes.findIndex(n => n.FilePath === 'System (Default)');
+    if (systemIdx !== -1) {
+        state.flowNodeIndex = systemIdx;
     } else {
-        state.flowNodeIndex = 0;
+        // Fallback to .zshrc
+        const zshrcIdx = state.data.FlowNodes.findIndex(n => n.FilePath.endsWith('.zshrc'));
+        if (zshrcIdx !== -1) {
+            state.flowNodeIndex = zshrcIdx;
+        } else {
+            state.flowNodeIndex = 0;
+        }
     }
     state.flowInitialized = true;
 }
@@ -376,46 +403,48 @@ async function renderDetails() {
             <div class="detail-row">
                 <div class="detail-label">Caused by</div>
                 <div class="detail-value">
-                    ${entry.SourceFile}:${entry.LineNumber}
+                    ${entry.SourceFile === 'System (Default)' && entry.LineNumber === 0 ? 'System (Default)' : `${entry.SourceFile}:${entry.LineNumber}`}
                     ${entry.Mode !== 'Unknown' ? `<span style="color:var(--text-muted); font-size:0.9em; margin-left:8px;">(Startup Phase: ${entry.Mode})</span>` : ''}
                 </div>
             </div>
     `;
 
     // Fetch and display the source line context
-    try {
-        const lineResp = await fetch(`/api/line-context?path=${encodeURIComponent(entry.SourceFile)}&line=${entry.LineNumber}`);
-        if (lineResp.ok) {
-            const lineContext = await lineResp.json();
-            if (!lineContext.ErrorMsg) {
-                html += `
-                    <div class="detail-row" style="margin-top: 8px;">
-                        <div class="detail-label">Source Line Context (${entry.SourceFile})</div>
-                        <div class="detail-value">
-                            <div style="background: var(--bg-secondary); padding: 6px 8px; border-radius: 4px; font-family: monospace; font-size: 0.9em; line-height: 1.4; overflow-x: auto;">
-                `;
-                if (lineContext.HasBefore2) {
-                    html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber - 2).padStart(2, ' ')}  ${escapeHtml(lineContext.Before2)}</div>`;
-                }
-                if (lineContext.HasBefore1) {
-                    html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber - 1).padStart(2, ' ')}  ${escapeHtml(lineContext.Before1)}</div>`;
-                }
-                html += `<div style="color: var(--accent); font-weight: bold;"> ${String(lineContext.LineNumber).padStart(2, ' ')}  ${escapeHtml(lineContext.Target)}</div>`;
-                if (lineContext.HasAfter1) {
-                    html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber + 1).padStart(2, ' ')}  ${escapeHtml(lineContext.After1)}</div>`;
-                }
-                if (lineContext.HasAfter2) {
-                    html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber + 2).padStart(2, ' ')}  ${escapeHtml(lineContext.After2)}</div>`;
-                }
-                html += `
+    if (entry.SourceFile !== 'System (Default)' || entry.LineNumber !== 0) {
+        try {
+            const lineResp = await fetch(`/api/line-context?path=${encodeURIComponent(entry.SourceFile)}&line=${entry.LineNumber}`);
+            if (lineResp.ok) {
+                const lineContext = await lineResp.json();
+                if (!lineContext.ErrorMsg) {
+                    html += `
+                        <div class="detail-row" style="margin-top: 8px;">
+                            <div class="detail-label">Source Line Context (${entry.SourceFile})</div>
+                            <div class="detail-value">
+                                <div style="background: var(--bg-secondary); padding: 6px 8px; border-radius: 4px; font-family: monospace; font-size: 0.9em; line-height: 1.4; overflow-x: auto;">
+                    `;
+                    if (lineContext.HasBefore2) {
+                        html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber - 2).padStart(2, ' ')}  ${escapeHtml(lineContext.Before2)}</div>`;
+                    }
+                    if (lineContext.HasBefore1) {
+                        html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber - 1).padStart(2, ' ')}  ${escapeHtml(lineContext.Before1)}</div>`;
+                    }
+                    html += `<div style="color: var(--accent); font-weight: bold;"> ${String(lineContext.LineNumber).padStart(2, ' ')}  ${escapeHtml(lineContext.Target)}</div>`;
+                    if (lineContext.HasAfter1) {
+                        html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber + 1).padStart(2, ' ')}  ${escapeHtml(lineContext.After1)}</div>`;
+                    }
+                    if (lineContext.HasAfter2) {
+                        html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber + 2).padStart(2, ' ')}  ${escapeHtml(lineContext.After2)}</div>`;
+                    }
+                    html += `
+                                </div>
                             </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                }
             }
+        } catch (e) {
+            // Silently ignore if line context can't be fetched
         }
-    } catch (e) {
-        // Silently ignore if line context can't be fetched
     }
 
     html += `</div>`;
@@ -536,9 +565,16 @@ function renderFlowNodes() {
         container.appendChild(div);
     });
 
-    // Scroll active node into view
-    const active = container.querySelector('.flow-node.active');
-    if (active) active.scrollIntoView({ inline: 'center', behavior: 'smooth' });
+    // Add End Node
+    const arrowEnd = document.createElement('div');
+    arrowEnd.className = 'flow-arrow';
+    arrowEnd.textContent = '→';
+    container.appendChild(arrowEnd);
+
+    const endNode = document.createElement('div');
+    endNode.className = 'flow-node start-node'; // Using start-node class for similar styling
+    endNode.textContent = '🏁 Shell Ready';
+    container.appendChild(endNode);
 }
 
 function renderFlowPathList() {
