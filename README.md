@@ -47,11 +47,11 @@ Non-interactive mode for scripting and quick reports.
 #### Ubuntu / Debian (x86_64 & ARM)
 ```bash
 # For x86_64:
-wget https://github.com/abulka/lspath/releases/latest/download/lspath_amd64.deb
+curl -sLO https://github.com/abulka/lspath/releases/latest/download/lspath_amd64.deb
 sudo apt install ./lspath_amd64.deb
 
-# For ARM64 (Raspberry Pi, etc.):
-wget https://github.com/abulka/lspath/releases/latest/download/lspath_arm64.deb
+# For ARM64:
+curl -sLO https://github.com/abulka/lspath/releases/latest/download/lspath_arm64.deb
 sudo apt install ./lspath_arm64.deb
 ```
 
@@ -68,7 +68,7 @@ sudo dnf install https://github.com/abulka/lspath/releases/latest/download/lspat
 #### macOS (Binary)
 ```bash
 # Download the latest binary for your architecture (x86_64 or arm64)
-curl -LO https://github.com/abulka/lspath/releases/latest/download/lspath_Darwin_$(uname -m).tar.gz
+curl -sLO https://github.com/abulka/lspath/releases/latest/download/lspath_Darwin_$(uname -m).tar.gz
 tar -xzf lspath_Darwin_$(uname -m).tar.gz
 sudo mv lspath /usr/local/bin/
 ```
