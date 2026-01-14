@@ -1,4 +1,4 @@
 package model
 
 // Version of lspath
-const Version = "1.3.0"
+const Version = "1.3.2"

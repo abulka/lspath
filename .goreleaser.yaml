@@ -52,7 +52,6 @@ snapshot:
   version_template: "{{ .Version }}-snapshot"
 
 changelog:
-  sort: asc
   filters:
     exclude:
       - '^docs:'
