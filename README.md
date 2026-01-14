@@ -65,6 +65,41 @@ sudo dnf install https://github.com/abulka/lspath/releases/latest/download/lspat
 sudo dnf install https://github.com/abulka/lspath/releases/latest/download/lspath_aarch64.rpm
 ```
 
+#### Fedora Silverblue (Toolbox)
+To keep your host system clean, install `lspath` inside a toolbox. By default, this uses your default toolbox container:
+```bash
+# Replace x86_64 with aarch64 if on ARM
+toolbox run sudo dnf install https://github.com/abulka/lspath/releases/latest/download/lspath_x86_64.rpm
+```
+
+If you have multiple toolboxes and want to target a specific one (e.g., `my-dev-box`):
+```bash
+toolbox run -c my-dev-box sudo dnf install ...
+```
+
+To run it from your host terminal:
+```bash
+toolbox run lspath
+# Or for a specific container
+toolbox run -c my-dev-box lspath
+```
+
+#### Distrobox
+If you are using Distrobox (e.g., on Steam Deck or MicroOS), you can install it into any container:
+```bash
+# Example for a Fedora-based container named 'my-box'
+distrobox enter my-box -- sudo dnf install https://github.com/abulka/lspath/releases/latest/download/lspath_x86_64.rpm
+
+# Example for a Debian-based container
+distrobox enter debian-box -- curl -sLO https://github.com/abulka/lspath/releases/latest/download/lspath_amd64.deb
+distrobox enter debian-box -- sudo apt install ./lspath_amd64.deb
+```
+
+Run it from the host:
+```bash
+distrobox enter my-box -- lspath
+```
+
 #### macOS (Binary)
 ```bash
 # Download the latest binary for your architecture (x86_64 or arm64)
@@ -87,7 +122,35 @@ go build -o lspath main.go
 
 ---
 
-## 📖 Usage
+## � Upgrading
+
+You can check if a new version is available by running:
+```bash
+lspath --update
+```
+
+### To perform the upgrade:
+
+#### Ubuntu / Debian
+Simply re-run the `curl` and `apt install` commands from the installation section. `apt` will automatically detect the newer version and upgrade it.
+
+#### Fedora / RHEL
+Re-run the `dnf install` command with the latest URL. Use `--refresh` if the package manager has cached the old metadata:
+```bash
+sudo dnf install --refresh https://github.com/abulka/lspath/releases/latest/download/lspath_x86_64.rpm
+```
+
+#### macOS (Binary)
+Download and extract the latest version over your existing binary:
+```bash
+curl -sLO https://github.com/abulka/lspath/releases/latest/download/lspath_Darwin_$(uname -m).tar.gz
+tar -xzf lspath_Darwin_*.tar.gz
+sudo mv lspath /usr/local/bin/
+```
+
+---
+
+## �📖 Usage
 
 Run `lspath` without arguments to enter the interactive TUI.
 
