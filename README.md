@@ -1,6 +1,6 @@
 # lspath
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](internal/model/version.go)
+[![Latest Release](https://img.shields.io/github/v/release/abulka/lspath)](https://github.com/abulka/lspath/releases)
 
 **lspath** is a powerful terminal-based tool designed to help you analyze, debug, and optimize your system's `PATH`. It visualizes how your PATH is constructed by your shell's startup sequence and identifies common issues like duplicates and missing directories.
 
@@ -42,11 +42,45 @@ Non-interactive mode for scripting and quick reports.
 
 ## 🛠️ Installation
 
+### Packages (Recommended)
+
+#### Ubuntu / Debian (x86_64 & ARM)
+```bash
+# For x86_64:
+wget https://github.com/abulka/lspath/releases/latest/download/lspath_amd64.deb
+sudo apt install ./lspath_amd64.deb
+
+# For ARM64 (Raspberry Pi, etc.):
+wget https://github.com/abulka/lspath/releases/latest/download/lspath_arm64.deb
+sudo apt install ./lspath_arm64.deb
+```
+
+#### Fedora / RHEL / CentOS (x86_64 & ARM)
+Fedora can install directly from the URL:
+```bash
+# For x86_64:
+sudo dnf install https://github.com/abulka/lspath/releases/latest/download/lspath_x86_64.rpm
+
+# For ARM64:
+sudo dnf install https://github.com/abulka/lspath/releases/latest/download/lspath_aarch64.rpm
+```
+
+#### macOS (Binary)
+```bash
+# Download the latest binary for your architecture (x86_64 or arm64)
+curl -LO https://github.com/abulka/lspath/releases/latest/download/lspath_Darwin_$(uname -m).tar.gz
+tar -xzf lspath_Darwin_$(uname -m).tar.gz
+sudo mv lspath /usr/local/bin/
+```
+
+#### Windows
+Download the `.zip` archive from the [Releases](https://github.com/abulka/lspath/releases) page, extract it, and add the folder to your `PATH`.
+
 ### Building from Source
 Ensure you have [Go](https://go.dev/) installed (version 1.24+ recommended).
 
 ```bash
-git clone https://github.com/youruser/lspath.git
+git clone https://github.com/abulka/lspath.git
 cd lspath
 go build -o lspath main.go
 ```
@@ -72,7 +106,7 @@ lspath [options]
 | `-j` | `--json` | Output raw analysis data as JSON |
 | `-w` | `--web` | Start Web Mode on http://localhost:8080 |
 | `-V` | `--version` | Print version information |
-| `-u` | `--update` | Check for latest version (not implemented) |
+| `-u` | `--update` | Check for latest version |
 
 ### Examples
 
@@ -110,14 +144,13 @@ lspath --web
 
 ---
 
+## 🛠️ Development
+
+For information on local setup, build testing, and the release process, see [doco/development.md](doco/development.md).
+
 ## Help 
 
 See [internal/tui/help.md](internal/tui/help.md) for help shown by the internal help system.
 
 ## 📜 License
 [MIT](LICENSE)
-
----
-
-## 🔄 Versioning
-Current Version: **1.3.0**

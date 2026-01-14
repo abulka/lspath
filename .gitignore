@@ -4,3 +4,8 @@ lspath
 # lspath output
 # verify_output_*.json
 .DS_Store
+dist/
+build/
+*.log
+*.tmp
+.env

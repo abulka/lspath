@@ -2,6 +2,7 @@ package tui
 
 import (
 	"lspath/internal/model"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -82,6 +83,6 @@ func InitialModel() AppModel {
 		InputBuffer:     ti,
 		SelectedIdx:     0,
 		ScrollPositions: make(map[string]int),
-		HelpContent:     helpContent,
+		HelpContent:     strings.ReplaceAll(helpContent, "{{VERSION}}", model.Version),
 	}
 }

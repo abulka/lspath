@@ -68,6 +68,6 @@ MODE SPECIFIC
 
 ABOUT
 -----
-lspath version 1.1.0
+lspath version {{VERSION}}
 (c) Andy Bulka 2026
 Feedback: abulka@gmail.com

@@ -274,6 +274,10 @@ func handleHelp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	text := string(content)
+	text = strings.ReplaceAll(text, "{{VERSION}}", model.Version)
+
 	w.Header().Set("Content-Type", "text/markdown")
-	w.Write(content)
+	w.Write([]byte(text))
 }

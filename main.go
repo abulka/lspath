@@ -12,7 +12,27 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/pflag"
+	"github.com/tcnksm/go-latest"
 )
+
+func checkUpdate(currentVer string) {
+	githubTag := &latest.GithubTag{
+		Owner:      "abulka",
+		Repository: "lspath",
+	}
+
+	res, err := latest.Check(githubTag, currentVer)
+	if err != nil {
+		return // Silently fail
+	}
+
+	if res.Outdated {
+		fmt.Printf("\n✨ A new version is available: %s (you have %s)\n", res.Current, currentVer)
+		fmt.Println("👉 Download it from https://github.com/abulka/lspath/releases")
+	} else if pflag.Lookup("update").Changed {
+		fmt.Printf("✅ You are using the latest version: %s\n", currentVer)
+	}
+}
 
 func main() {
 	pflag.Usage = func() {
@@ -49,7 +69,7 @@ func main() {
 	}
 
 	if *updateFlag {
-		fmt.Println("Check for updates: not implemented")
+		checkUpdate(model.Version)
 		return
 	}
 
