@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 
@@ -12,15 +11,16 @@ import (
 	"lspath/internal/web"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/pflag"
 )
 
 func main() {
-	flag.Usage = func() {
+	pflag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: lspath [options]\n\n")
 		fmt.Fprintf(os.Stderr, "lspath is a tool for analyzing and debugging your system PATH.\n")
 		fmt.Fprintf(os.Stderr, "By default, it starts in TUI mode for interactive exploration.\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
+		pflag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  lspath              # Start TUI mode\n")
 		fmt.Fprintf(os.Stderr, "  lspath --report    # Print a compact diagnostic report to stdout\n")
@@ -28,12 +28,30 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  lspath --json      # Output raw analysis data as JSON\n")
 	}
 
-	jsonFlag := flag.Bool("json", false, "Output raw analysis data as JSON")
-	reportFlag := flag.Bool("report", false, "Generate a detailed diagnostic report (CLI mode)")
-	outputFlag := flag.String("o", "", "Save report to the specified file (combined with --report)")
-	verboseFlag := flag.Bool("verbose", false, "Include detailed internal model data in the report")
-	webFlag := flag.Bool("w", false, "Start Web Mode on http://localhost:8080")
-	flag.Parse()
+	jsonFlag := pflag.BoolP("json", "j", false, "Output raw analysis data as JSON")
+	reportFlag := pflag.BoolP("report", "r", false, "Generate a detailed diagnostic report (CLI mode)")
+	outputFlag := pflag.StringP("output", "o", "", "Save report to the specified file (combined with --report)")
+	verboseFlag := pflag.BoolP("verbose", "v", false, "Include detailed internal model data in the report")
+	webFlag := pflag.BoolP("web", "w", false, "Start Web Mode on http://localhost:8080")
+	versionFlag := pflag.BoolP("version", "V", false, "Print version information")
+	updateFlag := pflag.BoolP("update", "u", false, "Check for latest version (not implemented)")
+	helpFlag := pflag.BoolP("help", "h", false, "Show this help message")
+	pflag.Parse()
+
+	if *helpFlag {
+		pflag.Usage()
+		return
+	}
+
+	if *versionFlag {
+		fmt.Printf("lspath version %s\n", model.Version)
+		return
+	}
+
+	if *updateFlag {
+		fmt.Println("Check for updates: not implemented")
+		return
+	}
 
 	if *webFlag {
 		web.StartServer()
