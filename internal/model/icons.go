@@ -11,4 +11,5 @@ const (
 	IconSymlink      = "→" // Right arrow (symlink)
 	IconMissing      = "✗" // Thin X (missing)
 	IconOK           = " " // Space (OK - no icon to reduce noise)
+	IconSession      = "◆" // Diamond for session-only paths
 )

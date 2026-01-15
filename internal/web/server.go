@@ -34,6 +34,9 @@ func expandTilde(path string) string {
 //go:embed static/*
 var staticFS embed.FS
 
+//go:embed help.md
+var helpMD string
+
 // StartServer starts the web server on the given port (or default 8080).
 func StartServer() {
 	mux := http.NewServeMux()
@@ -60,9 +63,11 @@ func StartServer() {
 }
 
 func handleTrace(w http.ResponseWriter, r *http.Request) {
-	// Run trace on-demand
+	sessionPath := os.Getenv("PATH")
+
+	// Run shell trace to find config file sources
 	shell := trace.DetectShell(os.Getenv("SHELL"))
-	stderr, err := trace.RunTrace(shell)
+	stderr, err := trace.RunTrace(shell, trace.SandboxInitialPath)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -77,14 +82,14 @@ func handleTrace(w http.ResponseWriter, r *http.Request) {
 		allEvents = append(allEvents, ev)
 	}
 
-	// drain errors
 	go func() {
 		for range errs {
 		}
 	}()
 
+	// Unified analysis: merge trace results with session PATH
 	analyzer := trace.NewAnalyzer()
-	result := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
+	result := analyzer.AnalyzeUnified(sessionPath, allEvents)
 
 	// Generate reports for web view
 	report := trace.GenerateReport(result, false)
@@ -197,23 +202,9 @@ func handleWhich(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shell := trace.DetectShell(os.Getenv("SHELL"))
-	stderr, err := trace.RunTrace(shell)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	defer stderr.Close()
-
-	parser := trace.NewParser(shell)
-	events, _ := parser.Parse(stderr)
-	var allEvents []model.TraceEvent
-	for ev := range events {
-		allEvents = append(allEvents, ev)
-	}
-
+	// Use session mode for which - we want to search the current PATH
 	analyzer := trace.NewAnalyzer()
-	result := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
+	result := analyzer.AnalyzeSessionPath(os.Getenv("PATH"))
 
 	type WhichMatch struct {
 		Index       int    `json:"Index"`
@@ -265,18 +256,8 @@ func handleWhich(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleHelp(w http.ResponseWriter, r *http.Request) {
-	content, err := os.ReadFile("internal/tui/help.md")
-	if err != nil {
-		// Try fallback if running from within internal/web
-		content, err = os.ReadFile("../../internal/tui/help.md")
-		if err != nil {
-			http.Error(w, "Help file not found", 404)
-			return
-		}
-	}
-
-	text := string(content)
-	text = strings.ReplaceAll(text, "{{VERSION}}", model.Version)
+	// Use the embedded help content
+	text := strings.ReplaceAll(helpMD, "{{VERSION}}", model.Version)
 
 	w.Header().Set("Content-Type", "text/markdown")
 	w.Write([]byte(text))

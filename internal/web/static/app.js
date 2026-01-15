@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function fetchTrace() {
     try {
+        showLoading();
         const response = await fetch('/api/trace');
         state.data = await response.json();
 
@@ -37,11 +38,24 @@ async function fetchTrace() {
         updateDiagnostics();
 
         renderAll();
+        hideLoading();
     } catch (e) {
         console.error(e);
+        hideLoading();
         const list = document.getElementById('path-list');
         if (list) list.textContent = 'Error loading trace: ' + e;
     }
+}
+
+function showLoading() {
+    const overlay = document.getElementById('loading-overlay');
+    const text = overlay.querySelector('.loading-text');
+    text.textContent = 'Analyzing PATH...';
+    overlay.classList.add('visible');
+}
+
+function hideLoading() {
+    document.getElementById('loading-overlay').classList.remove('visible');
 }
 
 function setupInputs() {
@@ -162,7 +176,10 @@ function setupSplitter(splitterId, panelSelector) {
 
 function moveFlowNode(delta) {
     if (!state.data) return;
-    const newIdx = Math.max(0, Math.min(state.flowNodeIndex + delta, state.data.FlowNodes.length - 1));
+    // Allow selecting shell start (-1) and shell ready (FlowNodes.length)
+    const minIdx = -1;
+    const maxIdx = state.data.FlowNodes.length;
+    const newIdx = Math.max(minIdx, Math.min(state.flowNodeIndex + delta, maxIdx));
     if (newIdx !== state.flowNodeIndex) {
         state.flowNodeIndex = newIdx;
         renderAll();
@@ -199,31 +216,22 @@ async function fetchHelp() {
 
     try {
         const resp = await fetch('/api/help');
-        if (!resp.ok) throw new Error("Could not load help");
+        if (!resp.ok) throw new Error("Server returned " + resp.status);
         const text = await resp.text();
+        if (!text || text.trim() === '') throw new Error("Empty response from server");
         content.textContent = text;
         content.dataset.loaded = 'true';
     } catch (e) {
-        content.textContent = "Error loading help content: " + e.message;
+        console.error('Help loading error:', e);
+        content.textContent = "Error loading help content: " + e.message + "\n\nTry refreshing the page or check the server logs.";
     }
 }
 
 function initializeFlowMode() {
     if (!state.data) return;
     
-    // Default to "System (Default)" node if it exists (usually the first one)
-    const systemIdx = state.data.FlowNodes.findIndex(n => n.FilePath === 'System (Default)');
-    if (systemIdx !== -1) {
-        state.flowNodeIndex = systemIdx;
-    } else {
-        // Fallback to .zshrc
-        const zshrcIdx = state.data.FlowNodes.findIndex(n => n.FilePath.endsWith('.zshrc'));
-        if (zshrcIdx !== -1) {
-            state.flowNodeIndex = zshrcIdx;
-        } else {
-            state.flowNodeIndex = 0;
-        }
-    }
+    // Default to "Shell Start" (flowNodeIndex = -1) which highlights nothing
+    state.flowNodeIndex = -1;
     state.flowInitialized = true;
 }
 
@@ -277,17 +285,36 @@ function renderPathList(containerId, indices, selectedIdx, viewType) {
         div.className = 'item-row' + (viewIdx === selectedIdx ? ' selected' : '');
 
         if (viewType === 'flow') {
-            const activeNode = state.data.FlowNodes[state.flowNodeIndex];
             let isHighlighted = false;
 
-            if (state.cumulative) {
-                const nodeOfEntry = state.data.FlowNodes.find(n => n.ID === entry.FlowID);
-                if (nodeOfEntry && nodeOfEntry.Order <= activeNode.Order) {
-                    isHighlighted = true;
+            if (state.flowNodeIndex === -1) {
+                // Shell Start: no highlighting
+                isHighlighted = false;
+            } else if (state.flowNodeIndex === state.data.FlowNodes.length) {
+                // Shell Ready: highlight same as last node
+                const lastNode = state.data.FlowNodes[state.data.FlowNodes.length - 1];
+                if (state.cumulative) {
+                    const nodeOfEntry = state.data.FlowNodes.find(n => n.ID === entry.FlowID);
+                    if (nodeOfEntry && nodeOfEntry.Order <= lastNode.Order) {
+                        isHighlighted = true;
+                    }
+                } else {
+                    if (entry.FlowID === lastNode.ID) {
+                        isHighlighted = true;
+                    }
                 }
             } else {
-                if (entry.FlowID === activeNode.ID) {
-                    isHighlighted = true;
+                // Normal flow node
+                const activeNode = state.data.FlowNodes[state.flowNodeIndex];
+                if (state.cumulative) {
+                    const nodeOfEntry = state.data.FlowNodes.find(n => n.ID === entry.FlowID);
+                    if (nodeOfEntry && nodeOfEntry.Order <= activeNode.Order) {
+                        isHighlighted = true;
+                    }
+                } else {
+                    if (entry.FlowID === activeNode.ID) {
+                        isHighlighted = true;
+                    }
                 }
             }
 
@@ -329,7 +356,12 @@ function renderPathList(containerId, indices, selectedIdx, viewType) {
             div.appendChild(priority);
         }
 
-        if (entry.IsDuplicate) {
+        if (entry.IsSessionOnly) {
+            const status = document.createElement('span');
+            status.className = 'status-pill';
+            status.textContent = `session ${Icons.Session}`;
+            div.appendChild(status);
+        } else if (entry.IsDuplicate) {
             const status = document.createElement('span');
             status.className = 'status-pill';
             status.textContent = `dup ${Icons.Duplicate}`;
@@ -536,10 +568,15 @@ function renderFlowNodes() {
     if (!container) return;
     container.innerHTML = '';
 
-    // Add Start Node
+    // Add Start Node (clickable, highlights nothing)
     const startNode = document.createElement('div');
-    startNode.className = 'flow-node start-node';
+    startNode.className = 'flow-node start-node' + (state.flowNodeIndex === -1 ? ' active' : '');
     startNode.textContent = '🚀 Shell Start';
+    startNode.style.cursor = 'pointer';
+    startNode.onclick = () => {
+        state.flowNodeIndex = -1;
+        renderAll();
+    };
     container.appendChild(startNode);
 
     state.data.FlowNodes.forEach((node, idx) => {
@@ -565,20 +602,52 @@ function renderFlowNodes() {
         container.appendChild(div);
     });
 
-    // Add End Node
+    // Add End Node (clickable, highlights same as last real node)
     const arrowEnd = document.createElement('div');
     arrowEnd.className = 'flow-arrow';
     arrowEnd.textContent = '→';
     container.appendChild(arrowEnd);
 
     const endNode = document.createElement('div');
-    endNode.className = 'flow-node start-node'; // Using start-node class for similar styling
+    const isEndNodeActive = state.flowNodeIndex === state.data.FlowNodes.length;
+    endNode.className = 'flow-node start-node' + (isEndNodeActive ? ' active' : '');
     endNode.textContent = '🏁 Shell Ready';
+    endNode.style.cursor = 'pointer';
+    endNode.onclick = () => {
+        // Shell Ready highlights the same as the last real node
+        state.flowNodeIndex = state.data.FlowNodes.length;
+        renderAll();
+    };
     container.appendChild(endNode);
 }
 
 function renderFlowPathList() {
     const allIndices = state.data.PathEntries.map((_, i) => i);
+    
+    // Filter indices based on flow node selection
+    let filteredIndices = allIndices;
+    if (state.flowNodeIndex === -1) {
+        // Shell Start: show no highlighted paths
+        filteredIndices = [];
+    } else if (state.flowNodeIndex === state.data.FlowNodes.length) {
+        // Shell Ready: same as last real node (cumulative)
+        const lastNode = state.data.FlowNodes[state.data.FlowNodes.length - 1];
+        if (state.cumulative) {
+            // Highlight all paths from nodes up to and including the last
+            filteredIndices = allIndices.filter(idx => {
+                const entry = state.data.PathEntries[idx];
+                const entryNode = state.data.FlowNodes.find(n => n.ID === entry.FlowID);
+                return entryNode && entryNode.Order <= lastNode.Order;
+            });
+        } else {
+            // Highlight only paths from the last node
+            filteredIndices = allIndices.filter(idx => {
+                const entry = state.data.PathEntries[idx];
+                return entry.FlowID === lastNode.ID;
+            });
+        }
+    }
+    
     renderPathList('flow-path-list', allIndices, state.flowSelectedIndex, 'flow');
 }
 

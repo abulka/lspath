@@ -648,15 +648,15 @@ func (m *AppModel) loadSelectedFile() {
 	}
 }
 
-// InitTraceCmd starts the trace in background.
+// InitTraceCmd runs unified analysis (session + trace).
 func InitTraceCmd() tea.Cmd {
 	return func() tea.Msg {
-		shell := trace.DetectShell(os.Getenv("SHELL"))
+		analyzer := trace.NewAnalyzer()
+		sessionPath := os.Getenv("PATH")
 
-		// Use RunTraceSync for simplicity in Tea command if it blocks reading.
-		// We need a non-stream version to just return the result for now.
-		// Or we can stream updates. For now, batch mode is simpler for V1.
-		stderr, err := trace.RunTrace(shell)
+		// Run shell trace
+		shell := trace.DetectShell(os.Getenv("SHELL"))
+		stderr, err := trace.RunTrace(shell, trace.SandboxInitialPath)
 		if err != nil {
 			return MsgError(err)
 		}
@@ -675,8 +675,8 @@ func InitTraceCmd() tea.Cmd {
 			log.Printf("Parser warning: %v", e)
 		}
 
-		analyzer := trace.NewAnalyzer()
-		res := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
+		// Run unified analysis
+		res := analyzer.AnalyzeUnified(sessionPath, allEvents)
 		return MsgTraceReady(res)
 	}
 }

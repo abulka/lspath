@@ -55,6 +55,293 @@ func NewAnalyzer() *Analyzer {
 	return &Analyzer{}
 }
 
+// AnalyzeSessionPath analyzes the current PATH directly without running a trace.
+// This gives an accurate view of the current session's PATH without duplicates
+// caused by re-running shell startup scripts.
+func (a *Analyzer) AnalyzeSessionPath(currentPath string) model.AnalysisResult {
+	var entries []model.PathEntry
+
+	// Create a single "Current Session" node
+	sessionNode := model.ConfigNode{
+		ID:          "node-0",
+		FilePath:    "Current Session",
+		Order:       0,
+		Depth:       0,
+		Description: "Your current terminal session's PATH",
+		Entries:     []int{},
+	}
+
+	// Parse the PATH
+	parts := strings.Split(currentPath, ":")
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		entries = append(entries, model.PathEntry{
+			Value:           p,
+			SourceFile:      "Current Session",
+			LineNumber:      0,
+			Mode:            "Session",
+			FlowID:          "node-0",
+			SymlinkPointsTo: -1,
+		})
+	}
+
+	// Post-process for duplicates and disk existence
+	seen := make(map[string]int)
+	resolvedPaths := make(map[string]int)
+
+	for i := range entries {
+		e := &entries[i]
+		normalizedPath := expandTilde(e.Value)
+
+		// Check if this path is a symlink
+		fileInfo, err := os.Lstat(normalizedPath)
+		var resolvedPath string
+		if err == nil && fileInfo.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(normalizedPath)
+			if err == nil {
+				var absTarget string
+				if filepath.IsAbs(target) {
+					absTarget = target
+				} else {
+					parent := filepath.Dir(normalizedPath)
+					absTarget = filepath.Join(parent, target)
+				}
+				absTarget = filepath.Clean(absTarget)
+				e.IsSymlink = true
+				e.SymlinkTarget = absTarget
+				resolvedPath = absTarget
+			}
+		}
+
+		if resolvedPath == "" {
+			resolvedPath = normalizedPath
+		}
+
+		// Duplicate check
+		if firstIdx, ok := seen[normalizedPath]; ok {
+			e.IsDuplicate = true
+			e.DuplicateOf = firstIdx
+			e.DuplicateMessage = fmt.Sprintf(
+				"Duplicates PATH entry #%d (%s)",
+				firstIdx+1, entries[firstIdx].Value,
+			)
+		} else if e.IsSymlink {
+			if firstIdx, ok := resolvedPaths[resolvedPath]; ok {
+				e.SymlinkPointsTo = firstIdx
+				e.SymlinkMessage = fmt.Sprintf(
+					"Symlink resolves to PATH entry #%d (%s)",
+					firstIdx+1, e.SymlinkTarget,
+				)
+			}
+		}
+
+		if !e.IsDuplicate {
+			seen[normalizedPath] = i
+			resolvedPaths[resolvedPath] = i
+		}
+
+		// Disk existence check
+		if _, err := os.Stat(normalizedPath); os.IsNotExist(err) {
+			e.Diagnostics = append(e.Diagnostics, "Directory does not exist on disk.")
+		}
+
+		// Add to session node's entries
+		sessionNode.Entries = append(sessionNode.Entries, i)
+	}
+
+	globalDiagnostics := []string{
+		"INFO: Showing current session PATH. Use --trace flag to see where paths originate from shell config files.",
+	}
+
+	return model.AnalysisResult{
+		PathEntries: entries,
+		FlowNodes:   []model.ConfigNode{sessionNode},
+		Diagnostics: globalDiagnostics,
+	}
+}
+
+// AnalyzeUnified runs both session and trace analysis, then merges them.
+// Session PATH entries that don't appear in trace are marked as session-only.
+// This provides the most complete view: actual PATH with full attribution.
+func (a *Analyzer) AnalyzeUnified(sessionPath string, events []model.TraceEvent) model.AnalysisResult {
+	// First, run the trace analysis to get config-based attribution and full flow structure
+	traceResult := a.Analyze(events, SandboxInitialPath)
+
+	// Build a map of traced paths for quick lookup (path value -> entry)
+	tracedPaths := make(map[string]*model.PathEntry)
+	for i := range traceResult.PathEntries {
+		entry := &traceResult.PathEntries[i]
+		if _, exists := tracedPaths[entry.Value]; !exists {
+			tracedPaths[entry.Value] = entry
+		}
+	}
+
+	// Process the actual session PATH in order
+	sessionParts := strings.Split(sessionPath, ":")
+	var unifiedEntries []model.PathEntry
+	var sessionOnlyEntries []int // indices of session-only entries
+
+	for _, pathValue := range sessionParts {
+		if pathValue == "" {
+			continue
+		}
+
+		entryIdx := len(unifiedEntries)
+
+		// Check if this path was in the trace
+		tracedEntry, inTrace := tracedPaths[pathValue]
+
+		var entry model.PathEntry
+		if inTrace {
+			// Use trace attribution - copy the entry
+			entry = *tracedEntry
+			entry.SymlinkPointsTo = -1 // Will be recalculated
+			entry.IsDuplicate = false  // Will be recalculated
+			entry.DuplicateOf = 0
+			entry.DuplicateMessage = ""
+		} else {
+			// Session-only entry
+			entry = model.PathEntry{
+				Value:           pathValue,
+				SourceFile:      "Session (Manual/Runtime)",
+				LineNumber:      0,
+				Mode:            "Session",
+				IsSessionOnly:   true,
+				SessionNote:     "Added manually or by runtime tool (not in shell config)",
+				SymlinkPointsTo: -1,
+				FlowID:          "session-node",
+			}
+			sessionOnlyEntries = append(sessionOnlyEntries, entryIdx)
+		}
+
+		unifiedEntries = append(unifiedEntries, entry)
+	}
+
+	// Use the trace's flow nodes as base (preserves shell startup order, depth, all config files)
+	flowNodes := traceResult.FlowNodes
+
+	// Remap flow node entries to point to unified entry indices
+	// Build a map from old trace path value -> new unified index
+	pathToUnifiedIdx := make(map[string][]int)
+	for i, entry := range unifiedEntries {
+		if !entry.IsSessionOnly {
+			pathToUnifiedIdx[entry.Value] = append(pathToUnifiedIdx[entry.Value], i)
+		}
+	}
+
+	// Update each flow node's entries to point to unified indices
+	for i := range flowNodes {
+		var newEntries []int
+		for _, oldIdx := range flowNodes[i].Entries {
+			if oldIdx < len(traceResult.PathEntries) {
+				pathValue := traceResult.PathEntries[oldIdx].Value
+				if indices, ok := pathToUnifiedIdx[pathValue]; ok && len(indices) > 0 {
+					// Take the first available index and remove it
+					newEntries = append(newEntries, indices[0])
+					pathToUnifiedIdx[pathValue] = indices[1:]
+				}
+			}
+		}
+		flowNodes[i].Entries = newEntries
+	}
+
+	// Add session-only node if there are session-only entries
+	if len(sessionOnlyEntries) > 0 {
+		sessionNode := model.ConfigNode{
+			ID:          "session-node",
+			FilePath:    "Session (Manual/Runtime)",
+			Order:       0, // Will be placed at the beginning
+			Depth:       0,
+			Description: "Paths added in this terminal session",
+			Entries:     sessionOnlyEntries,
+		}
+		// Insert at beginning (these are typically venvs etc that prepend to PATH)
+		flowNodes = append([]model.ConfigNode{sessionNode}, flowNodes...)
+		// Renumber orders
+		for i := range flowNodes {
+			flowNodes[i].Order = i + 1
+		}
+	}
+
+	// FlowID is already preserved from the trace entry copy, no need to remap.
+	// The trace correctly distinguishes between continuation nodes (e.g., .zshrc
+	// before and after sourcing nvm.sh), so we keep the original FlowID.
+
+	// Post-process for duplicates, symlinks, and disk existence
+	seen := make(map[string]int)
+	resolvedPaths := make(map[string]int)
+
+	for i := range unifiedEntries {
+		e := &unifiedEntries[i]
+		normalizedPath := expandTilde(e.Value)
+
+		// Check if this path is a symlink
+		fileInfo, err := os.Lstat(normalizedPath)
+		var resolvedPath string
+		if err == nil && fileInfo.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(normalizedPath)
+			if err == nil {
+				var absTarget string
+				if filepath.IsAbs(target) {
+					absTarget = target
+				} else {
+					parent := filepath.Dir(normalizedPath)
+					absTarget = filepath.Join(parent, target)
+				}
+				absTarget = filepath.Clean(absTarget)
+				e.IsSymlink = true
+				e.SymlinkTarget = absTarget
+				resolvedPath = absTarget
+			}
+		}
+
+		if resolvedPath == "" {
+			resolvedPath = normalizedPath
+		}
+
+		// Duplicate check
+		if firstIdx, ok := seen[normalizedPath]; ok {
+			e.IsDuplicate = true
+			e.DuplicateOf = firstIdx
+			e.DuplicateMessage = fmt.Sprintf(
+				"Duplicates PATH entry #%d (%s)",
+				firstIdx+1, unifiedEntries[firstIdx].Value,
+			)
+		} else if e.IsSymlink {
+			if firstIdx, ok := resolvedPaths[resolvedPath]; ok {
+				e.SymlinkPointsTo = firstIdx
+				e.SymlinkMessage = fmt.Sprintf(
+					"Symlink resolves to PATH entry #%d (%s)",
+					firstIdx+1, e.SymlinkTarget,
+				)
+			}
+		}
+
+		if !e.IsDuplicate {
+			seen[normalizedPath] = i
+			resolvedPaths[resolvedPath] = i
+		}
+
+		// Disk existence check
+		if _, err := os.Stat(normalizedPath); os.IsNotExist(err) {
+			e.Diagnostics = append(e.Diagnostics, "Directory does not exist on disk.")
+		}
+	}
+
+	globalDiagnostics := []string{
+		"INFO: Unified view - showing your actual PATH with full attribution.",
+		"INFO: Entries marked as 'Session' were added manually or by tools (not from shell config files).",
+	}
+
+	return model.AnalysisResult{
+		PathEntries: unifiedEntries,
+		FlowNodes:   flowNodes,
+		Diagnostics: globalDiagnostics,
+	}
+}
+
 func (a *Analyzer) Analyze(events []model.TraceEvent, initialPath string) model.AnalysisResult {
 	var flowNodes []model.ConfigNode
 	var lastFile string
@@ -425,6 +712,9 @@ func (a *Analyzer) Analyze(events []model.TraceEvent, initialPath string) model.
 		globalDiagnostics = append(globalDiagnostics, "INFO: Detected as an INTERACTIVE (non-login) shell.")
 	}
 
+	// Add trace mode explanation
+	globalDiagnostics = append(globalDiagnostics, "INFO: Trace Mode - showing PATH derived from shell config files. This is a \"pure\" view of what a fresh terminal would have. Session-specific paths (e.g., activated virtual environments) are not shown.")
+
 	// Priority checks
 	brewIdx := -1
 	usrLocalIdx := -1
@@ -542,7 +832,9 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 		for i, e := range res.PathEntries {
 			// Determine status icon
 			statusIcon := model.IconOK
-			if e.IsDuplicate || e.SymlinkPointsTo >= 0 {
+			if e.IsSessionOnly {
+				statusIcon = model.IconSession
+			} else if e.IsDuplicate || e.SymlinkPointsTo >= 0 {
 				statusIcon = model.IconDuplicate
 			} else if isMissing(e.Value) {
 				statusIcon = model.IconMissing

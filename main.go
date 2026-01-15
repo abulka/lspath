@@ -38,14 +38,15 @@ func main() {
 	pflag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: lspath [options]\n\n")
 		fmt.Fprintf(os.Stderr, "lspath is a tool for analyzing and debugging your system PATH.\n")
-		fmt.Fprintf(os.Stderr, "By default, it starts in TUI mode for interactive exploration.\n\n")
+		fmt.Fprintf(os.Stderr, "It shows your actual PATH with full attribution from shell config files.\n")
+		fmt.Fprintf(os.Stderr, "Session-specific entries (e.g., virtual environments) are clearly marked.\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		pflag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  lspath              # Start TUI mode\n")
-		fmt.Fprintf(os.Stderr, "  lspath --report    # Print a compact diagnostic report to stdout\n")
-		fmt.Fprintf(os.Stderr, "  lspath --report -o r.txt   # Save report to a file\n")
-		fmt.Fprintf(os.Stderr, "  lspath --json      # Output raw analysis data as JSON\n")
+		fmt.Fprintf(os.Stderr, "  lspath              # Start TUI mode (unified view)\n")
+		fmt.Fprintf(os.Stderr, "  lspath --report     # Print diagnostic report to stdout\n")
+		fmt.Fprintf(os.Stderr, "  lspath -r -o r.txt  # Save report to file\n")
+		fmt.Fprintf(os.Stderr, "  lspath --json       # Output analysis as JSON\n")
 	}
 
 	jsonFlag := pflag.BoolP("json", "j", false, "Output raw analysis data as JSON")
@@ -93,8 +94,11 @@ func main() {
 }
 
 func runReportMode(outputFile string, verbose bool) {
+	sessionPath := os.Getenv("PATH")
+
+	// Run shell trace to find config file sources
 	shell := trace.DetectShell(os.Getenv("SHELL"))
-	stderr, err := trace.RunTrace(shell)
+	stderr, err := trace.RunTrace(shell, trace.SandboxInitialPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error running trace: %v\n", err)
 		os.Exit(1)
@@ -111,8 +115,10 @@ func runReportMode(outputFile string, verbose bool) {
 		}
 	}()
 
+	// Unified analysis: merge trace results with session PATH
 	analyzer := trace.NewAnalyzer()
-	result := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
+	result := analyzer.AnalyzeUnified(sessionPath, allEvents)
+
 	report := trace.GenerateReport(result, verbose)
 
 	if outputFile != "" {
@@ -128,9 +134,10 @@ func runReportMode(outputFile string, verbose bool) {
 }
 
 func runJsonMode() {
+	sessionPath := os.Getenv("PATH")
+
 	shell := trace.DetectShell(os.Getenv("SHELL"))
-	// In JSON mode, we block and run trace sync
-	stderr, err := trace.RunTrace(shell)
+	stderr, err := trace.RunTrace(shell, trace.SandboxInitialPath)
 	if err != nil {
 		panic(err)
 	}
@@ -143,14 +150,13 @@ func runJsonMode() {
 		allEvents = append(allEvents, ev)
 	}
 
-	// Drain errors
 	go func() {
 		for range errs {
 		}
 	}()
 
 	analyzer := trace.NewAnalyzer()
-	result := analyzer.Analyze(allEvents, trace.SandboxInitialPath)
+	result := analyzer.AnalyzeUnified(sessionPath, allEvents)
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")

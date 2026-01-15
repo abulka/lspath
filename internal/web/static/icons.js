@@ -8,5 +8,6 @@ const Icons = {
     Duplicate: '≈',
     Symlink: '→',
     Missing: '✗',
-    OK: ' '
+    OK: ' ',
+    Session: '◆'
 };

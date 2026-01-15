@@ -96,12 +96,12 @@ func (m AppModel) View() string {
 	leftView.WriteString("\n\n") // 2 newlines = 3 lines total (Title + blank + blank)
 
 	// Determine Highlighting Context
-	var activeFlowID string
 	var activeFlowOrder int
+	var activeFlowID string // For highlighting entries from the selected flow node
 	if m.ShowFlow && len(m.TraceResult.FlowNodes) > 0 && m.FlowSelectedIdx < len(m.TraceResult.FlowNodes) {
 		node := m.TraceResult.FlowNodes[m.FlowSelectedIdx]
-		activeFlowID = node.ID
 		activeFlowOrder = node.Order
+		activeFlowID = node.ID
 	}
 
 	// Create a map of FlowID -> Order for fast lookup if needed,
@@ -143,7 +143,9 @@ func (m AppModel) View() string {
 
 		// Determine status icon
 		statusIcon := model.IconOK
-		if entry.IsDuplicate || entry.SymlinkPointsTo >= 0 {
+		if entry.IsSessionOnly {
+			statusIcon = model.IconSession // Session-only entry (not from config files)
+		} else if entry.IsDuplicate || entry.SymlinkPointsTo >= 0 {
 			statusIcon = model.IconDuplicate
 		} else if entry.IsSymlink {
 			statusIcon = model.IconSymlink
@@ -158,7 +160,9 @@ func (m AppModel) View() string {
 		}
 
 		line := fmt.Sprintf("%2d. %s %s", idx+1, statusIcon, entry.Value)
-		if entry.IsDuplicate {
+		if entry.IsSessionOnly {
+			line += " (session)"
+		} else if entry.IsDuplicate {
 			line += " (duplicate)"
 		} else if entry.SymlinkPointsTo >= 0 {
 			line += " (duplicate, symlink)"
@@ -194,7 +198,7 @@ func (m AppModel) View() string {
 					}
 				}
 			} else {
-				// Specific: Highlight only if Entry belong to THIS specific node split
+				// Specific: Highlight entries belonging to the selected flow node
 				if entry.FlowID == activeFlowID {
 					highlight = true
 				}
@@ -244,6 +248,7 @@ func (m AppModel) View() string {
 		rightView.WriteString(titleStyle.Render("Configuration Flow"))
 		rightView.WriteString("\n\n") // 2 lines overhead (Title + blank line)
 
+		// Flow mode with unified trace + session data
 		// Windowing for Flow List (Top Panel)
 		// Total panel height is topH.
 		// One line is taken by the bottom divider border.
@@ -285,8 +290,13 @@ func (m AppModel) View() string {
 		for i := startIdx; i < endIdx; i++ {
 			node := m.TraceResult.FlowNodes[i]
 			name := node.FilePath
-			// Truncate home for readability
-			if strings.HasPrefix(name, os.Getenv("HOME")) {
+
+			// Special display for session-only nodes
+			isSessionNode := name == "Session (Manual/Runtime)"
+			if isSessionNode {
+				name = "Current Session"
+			} else if strings.HasPrefix(name, os.Getenv("HOME")) {
+				// Truncate home for readability
 				name = "~" + strings.TrimPrefix(name, os.Getenv("HOME"))
 			}
 
@@ -374,7 +384,14 @@ func (m AppModel) View() string {
 			ownCount := len(node.Entries)
 			totalCount := ownCount + nestedCount
 
-			if node.NotExecuted {
+			if isSessionNode {
+				// Session nodes show "session-only" instead of file status
+				pStr := "path"
+				if ownCount > 1 {
+					pStr = "paths"
+				}
+				statusStr = fmt.Sprintf(" [%d %s]", ownCount, pStr)
+			} else if node.NotExecuted {
 				statusStr = " [Not Executed]"
 			} else if totalCount == 0 {
 				statusStr = " [No Change]"
@@ -578,7 +595,9 @@ func (m AppModel) View() string {
 			// Build directory line with optional hint
 			dirLine := fmt.Sprintf("\nDirectory:  %s", entry.Value)
 			if !m.ShowDiagnostics {
-				if entry.IsDuplicate {
+				if entry.IsSessionOnly {
+					dirLine += "  (⚡ session-only)"
+				} else if entry.IsDuplicate {
 					dirLine += fmt.Sprintf("  (%s. Press 'd' for details)", entry.DuplicateMessage)
 				} else if entry.SymlinkPointsTo >= 0 {
 					dirLine += fmt.Sprintf("  (%s. Press 'd' for details)", entry.SymlinkMessage)
@@ -588,33 +607,47 @@ func (m AppModel) View() string {
 			}
 			rightView.WriteString(dirLine)
 
-			causedBy := fmt.Sprintf("\nCaused by:  %s", entry.SourceFile)
-			if entry.Mode != "Unknown" {
-				causedBy += fmt.Sprintf(" (Startup Phase: %s)", entry.Mode)
-			}
-			rightView.WriteString(causedBy)
-			if entry.SourceFile == "System (Default)" && entry.LineNumber == 0 {
-				rightView.WriteString("\nLine:       N/A")
+			// Show source info - different for session-only entries
+			if entry.IsSessionOnly {
+				rightView.WriteString("\nCaused by:  Current Session (not from config files)")
+				if entry.SessionNote != "" {
+					rightView.WriteString(fmt.Sprintf("\nNote:       %s", entry.SessionNote))
+				}
+				rightView.WriteString("\n\n--- Session-Only Entry ---")
+				rightView.WriteString("\nThis path exists in your current terminal but was not")
+				rightView.WriteString("\nadded by any shell configuration file. Common causes:")
+				rightView.WriteString("\n  • Virtual environment (.venv, conda)")
+				rightView.WriteString("\n  • Manual: export PATH=\"...\"")
+				rightView.WriteString("\n  • Added by a tool after shell startup")
 			} else {
-				rightView.WriteString(fmt.Sprintf("\nLine:       %d", entry.LineNumber))
-			}
+				causedBy := fmt.Sprintf("\nCaused by:  %s", entry.SourceFile)
+				if entry.Mode != "Unknown" {
+					causedBy += fmt.Sprintf(" (Startup Phase: %s)", entry.Mode)
+				}
+				rightView.WriteString(causedBy)
+				if entry.SourceFile == "System (Default)" && entry.LineNumber == 0 {
+					rightView.WriteString("\nLine:       N/A")
+				} else {
+					rightView.WriteString(fmt.Sprintf("\nLine:       %d", entry.LineNumber))
+				}
 
-			// Show the actual line from the config file with context
-			lineContext := model.GetLineContext(entry.SourceFile, entry.LineNumber)
-			if lineContext.ErrorMsg == "" && (entry.LineNumber > 0 || entry.SourceFile != "System (Default)") {
-				rightView.WriteString(fmt.Sprintf("\n\n--- Source Line Context (%s) ---", entry.SourceFile))
-				if lineContext.HasBefore2 {
-					rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber-2, lineContext.Before2))
-				}
-				if lineContext.HasBefore1 {
-					rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber-1, lineContext.Before1))
-				}
-				rightView.WriteString(fmt.Sprintf("\n» %4d  %s", lineContext.LineNumber, lineContext.Target))
-				if lineContext.HasAfter1 {
-					rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber+1, lineContext.After1))
-				}
-				if lineContext.HasAfter2 {
-					rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber+2, lineContext.After2))
+				// Show the actual line from the config file with context
+				lineContext := model.GetLineContext(entry.SourceFile, entry.LineNumber)
+				if lineContext.ErrorMsg == "" && (entry.LineNumber > 0 || entry.SourceFile != "System (Default)") {
+					rightView.WriteString(fmt.Sprintf("\n\n--- Source Line Context (%s) ---", entry.SourceFile))
+					if lineContext.HasBefore2 {
+						rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber-2, lineContext.Before2))
+					}
+					if lineContext.HasBefore1 {
+						rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber-1, lineContext.Before1))
+					}
+					rightView.WriteString(fmt.Sprintf("\n» %4d  %s", lineContext.LineNumber, lineContext.Target))
+					if lineContext.HasAfter1 {
+						rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber+1, lineContext.After1))
+					}
+					if lineContext.HasAfter2 {
+						rightView.WriteString(fmt.Sprintf("\n  %4d  %s", lineContext.LineNumber+2, lineContext.After2))
+					}
 				}
 			}
 
@@ -795,7 +828,8 @@ func (m *AppModel) renderDiagnosticsPopup() string {
 	content := strings.Join(visibleLines, "\n")
 
 	title := titleStyle.Render("Global Diagnostics Report")
-	footer := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("\nPress 's' to save report, 'v' to toggle verbose, 'd' or 'Esc' to close")
+	footer := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
+		"\nPress 's' to save, 'v' for verbose, 'd'/Esc to close")
 
 	dialog := lipgloss.NewStyle().
 		Width(popupWidth).

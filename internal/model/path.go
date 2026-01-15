@@ -20,6 +20,10 @@ type PathEntry struct {
 	DuplicateMessage string // User-friendly duplicate message (plain text)
 	SymlinkMessage   string // User-friendly symlink message (plain text)
 
+	// Session tracking
+	IsSessionOnly bool   // True if this path was added manually/runtime (not from shell config)
+	SessionNote   string // Explanation of session-only status (e.g., "Virtual environment")
+
 	// Flow Attribution
 	FlowID      string   // ID of the ConfigNode this belongs to
 	Diagnostics []string // List of issues (e.g., missing directory)

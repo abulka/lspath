@@ -102,8 +102,8 @@
 
         /* Lists & Details Panels */
         .list-panel {
-            flex: 0 0 40%;
-            /* 40% of screen for paths, making details wider */
+            flex: 0 0 60%;
+            /* 60% of screen for paths, making details wider */
             border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
@@ -284,9 +284,9 @@
         }
 
         .item-row .status-pill {
-            font-size: 0.7em;
-            padding: 1px 4px;
-            border-radius: 3px;
+            font-size: 0.8em;
+            padding: 4px 12px;
+            border-radius: 4px;
             background: var(--bg-deep);
         }
 
@@ -556,10 +556,54 @@
             color: #fff;
             border-color: var(--magenta);
         }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .loading-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-text {
+            margin-top: 15px;
+            color: var(--text-color);
+            font-size: 1em;
+        }
     </style>
 </head>
 
 <body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-text">Tracing shell startup...</div>
+    </div>
+
     <nav id="sidebar">
         <div class="sidebar-header">
             lspath
@@ -577,6 +621,7 @@
         <div class="nav-item" onclick="switchView('help')" id="nav-help">
             <span>❓</span> Help
         </div>
+        <div style="flex: 1;"></div>
     </nav>
 
     <main id="main-view">
