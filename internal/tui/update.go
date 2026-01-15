@@ -554,12 +554,29 @@ func (m *AppModel) loadDirectoryListing() {
 
 	files, err := os.ReadDir(dir)
 	if err != nil {
-		m.DirectoryListing = fmt.Sprintf("Error reading directory: %v", err)
+		// Provide user-friendly error messages
+		if os.IsNotExist(err) {
+			m.DirectoryListing = fmt.Sprintf("Directory does not exist:\n\n%s", dir)
+		} else if os.IsPermission(err) {
+			m.DirectoryListing = fmt.Sprintf("⚠️ Permission denied: Cannot read directory\n\n%s", dir)
+		} else {
+			m.DirectoryListing = fmt.Sprintf("⚠️ Cannot access directory:\n\n%s\n\nError: %v", dir, err)
+		}
+		m.FileCount = 0
+		m.DirCount = 0
 		return
 	}
 
 	m.FileCount = 0
 	m.DirCount = 0
+
+	// Handle empty directory
+	if len(files) == 0 {
+		m.DirectoryListing = "Directory is empty"
+		m.DetailsScrollY = 0
+		return
+	}
+
 	var sb strings.Builder
 	w := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
 

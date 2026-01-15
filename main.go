@@ -52,7 +52,7 @@ func main() {
 	jsonFlag := pflag.BoolP("json", "j", false, "Output raw analysis data as JSON")
 	reportFlag := pflag.BoolP("report", "r", false, "Generate a detailed diagnostic report (CLI mode)")
 	outputFlag := pflag.StringP("output", "o", "", "Save report to the specified file (combined with --report)")
-	verboseFlag := pflag.BoolP("verbose", "v", false, "Include detailed internal model data in the report")
+	verboseFlag := pflag.BoolP("verbose", "v", false, "Include detailed path entry information in the report")
 	webFlag := pflag.BoolP("web", "w", false, "Start Web Mode on http://localhost:8080")
 	versionFlag := pflag.BoolP("version", "V", false, "Print version information")
 	updateFlag := pflag.BoolP("update", "u", false, "Check for latest version (not implemented)")

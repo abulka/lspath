@@ -190,6 +190,15 @@ lspath --json > path_data.json
 lspath --web
 ```
 
+## 🐛 Known Issues & Quirks
+
+### Session vs Trace Mode PATH Differences
+
+When running `lspath --report`, you may see different "CONFIGURATION FILES FLOW" output depending on whether output is redirected - see [Quirks Explained](doco/development.md#-known-issues--quirks) for more details on this issue.
+
+> For consistent output across invocations, use `lspath -r -o output.txt` to explicitly save to a file, or ensure you're running in the same shell context.
+
+
 ---
 
 ## ⌨️ TUI Keyboard Shortcuts

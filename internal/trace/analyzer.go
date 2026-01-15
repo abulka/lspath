@@ -2,7 +2,6 @@ package trace
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,6 +24,34 @@ func expandTilde(path string) string {
 		}
 	}
 	return path
+}
+
+// isLikelySystemPath returns true if the path looks like it should be part
+// of the system default PATH rather than a session-specific addition.
+// Common system paths that might be added by /etc/bash.bashrc or /etc/environment
+// but missed in the trace due to the minimal SandboxInitialPath baseline.
+func isLikelySystemPath(path string) bool {
+	commonSystemPaths := []string{
+		"/usr/local/sbin",
+		"/usr/local/bin",
+		"/usr/sbin",
+		"/usr/bin",
+		"/sbin",
+		"/bin",
+		"/usr/games",
+		"/usr/local/games",
+		"/snap/bin",
+		"/opt/local/bin",
+		"/opt/local/sbin",
+	}
+
+	for _, sysPath := range commonSystemPaths {
+		if path == sysPath {
+			return true
+		}
+	}
+
+	return false
 }
 
 // getLineFromFile reads a specific line number from a file
@@ -202,18 +229,34 @@ func (a *Analyzer) AnalyzeUnified(sessionPath string, events []model.TraceEvent)
 			entry.DuplicateOf = 0
 			entry.DuplicateMessage = ""
 		} else {
-			// Session-only entry
-			entry = model.PathEntry{
-				Value:           pathValue,
-				SourceFile:      "Session (Manual/Runtime)",
-				LineNumber:      0,
-				Mode:            "Session",
-				IsSessionOnly:   true,
-				SessionNote:     "Added manually or by runtime tool (not in shell config)",
-				SymlinkPointsTo: -1,
-				FlowID:          "session-node",
+			// Not in trace - could be session-only OR could be a system path
+			// that the trace missed due to starting with minimal SandboxInitialPath
+			if isLikelySystemPath(pathValue) {
+				// Attribute to System (Default) rather than marking as session-only
+				entry = model.PathEntry{
+					Value:           pathValue,
+					SourceFile:      "System (Default)",
+					LineNumber:      0,
+					Mode:            "System",
+					IsSessionOnly:   false,
+					SymlinkPointsTo: -1,
+					FlowID:          "node-0",
+				}
+				// Don't add to sessionOnlyEntries, add to System node instead
+			} else {
+				// Truly session-only entry (e.g., virtualenv, manual export)
+				entry = model.PathEntry{
+					Value:           pathValue,
+					SourceFile:      "Session (Manual/Runtime)",
+					LineNumber:      0,
+					Mode:            "Session",
+					IsSessionOnly:   true,
+					SessionNote:     "Added manually or by runtime tool (not in shell config)",
+					SymlinkPointsTo: -1,
+					FlowID:          "session-node",
+				}
+				sessionOnlyEntries = append(sessionOnlyEntries, entryIdx)
 			}
-			sessionOnlyEntries = append(sessionOnlyEntries, entryIdx)
 		}
 
 		unifiedEntries = append(unifiedEntries, entry)
@@ -224,9 +267,20 @@ func (a *Analyzer) AnalyzeUnified(sessionPath string, events []model.TraceEvent)
 
 	// Remap flow node entries to point to unified entry indices
 	// Build a map from old trace path value -> new unified index
+	// Also track system paths that need to be added to the System (Default) node
 	pathToUnifiedIdx := make(map[string][]int)
+	var systemNodeEntries []int
+
 	for i, entry := range unifiedEntries {
-		if !entry.IsSessionOnly {
+		if entry.IsSessionOnly {
+			continue // Skip session-only entries
+		}
+
+		if entry.FlowID == "node-0" && entry.SourceFile == "System (Default)" {
+			// This is a system path that wasn't in the trace but we attributed to system
+			systemNodeEntries = append(systemNodeEntries, i)
+		} else {
+			// Normal traced entry
 			pathToUnifiedIdx[entry.Value] = append(pathToUnifiedIdx[entry.Value], i)
 		}
 	}
@@ -234,16 +288,34 @@ func (a *Analyzer) AnalyzeUnified(sessionPath string, events []model.TraceEvent)
 	// Update each flow node's entries to point to unified indices
 	for i := range flowNodes {
 		var newEntries []int
-		for _, oldIdx := range flowNodes[i].Entries {
-			if oldIdx < len(traceResult.PathEntries) {
-				pathValue := traceResult.PathEntries[oldIdx].Value
-				if indices, ok := pathToUnifiedIdx[pathValue]; ok && len(indices) > 0 {
-					// Take the first available index and remove it
-					newEntries = append(newEntries, indices[0])
-					pathToUnifiedIdx[pathValue] = indices[1:]
+
+		// Special handling for System (Default) node - add the extra system paths
+		if flowNodes[i].FilePath == "System (Default)" {
+			// First add the originally traced entries
+			for _, oldIdx := range flowNodes[i].Entries {
+				if oldIdx < len(traceResult.PathEntries) {
+					pathValue := traceResult.PathEntries[oldIdx].Value
+					if indices, ok := pathToUnifiedIdx[pathValue]; ok && len(indices) > 0 {
+						newEntries = append(newEntries, indices[0])
+						pathToUnifiedIdx[pathValue] = indices[1:]
+					}
+				}
+			}
+			// Then add any system paths we detected from session but weren't in trace
+			newEntries = append(newEntries, systemNodeEntries...)
+		} else {
+			// For other nodes, just remap the entries
+			for _, oldIdx := range flowNodes[i].Entries {
+				if oldIdx < len(traceResult.PathEntries) {
+					pathValue := traceResult.PathEntries[oldIdx].Value
+					if indices, ok := pathToUnifiedIdx[pathValue]; ok && len(indices) > 0 {
+						newEntries = append(newEntries, indices[0])
+						pathToUnifiedIdx[pathValue] = indices[1:]
+					}
 				}
 			}
 		}
+
 		flowNodes[i].Entries = newEntries
 	}
 
@@ -252,13 +324,25 @@ func (a *Analyzer) AnalyzeUnified(sessionPath string, events []model.TraceEvent)
 		sessionNode := model.ConfigNode{
 			ID:          "session-node",
 			FilePath:    "Session (Manual/Runtime)",
-			Order:       0, // Will be placed at the beginning
+			Order:       0, // Will be set properly below
 			Depth:       0,
 			Description: "Paths added in this terminal session",
 			Entries:     sessionOnlyEntries,
 		}
-		// Insert at beginning (these are typically venvs etc that prepend to PATH)
-		flowNodes = append([]model.ConfigNode{sessionNode}, flowNodes...)
+
+		// Insert AFTER "System (Default)" node but before other config files
+		// Find the System (Default) node (should be first, but let's be safe)
+		insertPos := 0
+		for i, node := range flowNodes {
+			if node.FilePath == "System (Default)" {
+				insertPos = i + 1
+				break
+			}
+		}
+
+		// Insert at the calculated position
+		flowNodes = append(flowNodes[:insertPos], append([]model.ConfigNode{sessionNode}, flowNodes[insertPos:]...)...)
+
 		// Renumber orders
 		for i := range flowNodes {
 			flowNodes[i].Order = i + 1
@@ -791,40 +875,64 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 	sb.WriteString("\n")
 
 	if verbose {
-		sb.WriteString("PATH ENTRIES (PRIORITY ORDER)\n")
-		sb.WriteString("-----------------------------\n\n")
-		lastCat := ""
+		sb.WriteString(fmt.Sprintf("PATH ENTRIES (%d ENTRIES) - PRIORITY ORDER\n", len(res.PathEntries)))
+		sb.WriteString("--------------------------------------------\n\n")
 		for i, e := range res.PathEntries {
 			cat := getPathCategory(e.Value)
-			if cat != lastCat {
-				sb.WriteString(fmt.Sprintf("[%s]\n", strings.ToUpper(cat)))
-				lastCat = cat
+			pathMissing := isMissing(e.Value)
+
+			// Determine status icon (same as non-verbose mode)
+			statusIcon := model.IconOK
+			if e.IsSessionOnly {
+				statusIcon = model.IconSession
+			} else if e.IsDuplicate || e.SymlinkPointsTo >= 0 {
+				statusIcon = model.IconDuplicate
+			} else if pathMissing {
+				statusIcon = model.IconMissing
 			}
 
-			status := "OK      "
+			// Build suffix labels (same as non-verbose mode)
+			suffixLabel := ""
 			if e.IsDuplicate {
-				status = "DUP " + model.IconDuplicate + " "
-			} else if isMissing(e.Value) {
-				status = "MISSING" + model.IconMissing
+				origPath := res.PathEntries[e.DuplicateOf].Value
+				suffixLabel = fmt.Sprintf(" [duplicate → #%d: %s]", e.DuplicateOf+1, origPath)
+			} else if e.SymlinkPointsTo >= 0 {
+				targetPath := res.PathEntries[e.SymlinkPointsTo].Value
+				suffixLabel = fmt.Sprintf(" [duplicate, symlink → #%d: %s]", e.SymlinkPointsTo+1, targetPath)
+			} else if pathMissing {
+				suffixLabel = " (missing)"
 			}
 
-			sb.WriteString(fmt.Sprintf(" %2d. [%s] %s\n", i+1, status, e.Value))
+			// Priority indicators
+			if i == 0 {
+				suffixLabel += " (highest priority " + model.IconPriorityHigh + ")"
+			} else if i == len(res.PathEntries)-1 {
+				suffixLabel += " (lowest priority " + model.IconPriorityLow + ")"
+			}
 
-			var sourceLine string
+			sb.WriteString(fmt.Sprintf("%2d. %s %s%s\n", i+1, statusIcon, e.Value, suffixLabel))
+
+			// Source line
 			if e.LineNumber == 0 {
-				sourceLine = fmt.Sprintf("    Source: %s", e.SourceFile)
+				sb.WriteString(fmt.Sprintf("      - Source: %s\n", e.SourceFile))
 			} else {
-				sourceLine = fmt.Sprintf("    Source: %s:%d", e.SourceFile, e.LineNumber)
+				sb.WriteString(fmt.Sprintf("      - Source: %s:%d\n", e.SourceFile, e.LineNumber))
 			}
 
+			// Path Contains line
+			if !pathMissing {
+				sb.WriteString(fmt.Sprintf("      - Path Contains: %s\n", getDirStats(e.Value)))
+			} else {
+				sb.WriteString("      - Path Contains: does not exist\n")
+			}
+
+			// Startup Phase line
 			if e.Mode != "Unknown" {
-				sourceLine += fmt.Sprintf(" (Startup Phase: %s)", e.Mode)
+				sb.WriteString(fmt.Sprintf("      - Startup Phase: %s\n", e.Mode))
 			}
-			sb.WriteString(sourceLine + "\n")
-			if !e.IsDuplicate && !isMissing(e.Value) {
-				sb.WriteString(fmt.Sprintf("    Stats:  %s\n", getDirStats(e.Value)))
-			}
-			sb.WriteString("\n")
+
+			// Category line
+			sb.WriteString(fmt.Sprintf("      - Category: %s\n", cat))
 		}
 	} else {
 		sb.WriteString(fmt.Sprintf("PATH (%d ENTRIES) - Use --verbose (or 'v' in TUI) for details\n", len(res.PathEntries)))
@@ -959,13 +1067,19 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 		sb.WriteString("No specific issues found.\n\n")
 	}
 
-	sb.WriteString("CONFIGURATION FILES FLOW\n")
-	sb.WriteString("------------------------\n")
+	sb.WriteString("CONFIGURATION FILES FLOW - SUMMARY\n")
+	sb.WriteString("----------------------------------\n")
 	for _, n := range res.FlowNodes {
 		indent := strings.Repeat("  ", n.Depth)
 		status := ""
 		if n.NotExecuted {
-			status = " [Not Executed]"
+			// Check if file exists
+			expandedPath := expandTilde(n.FilePath)
+			if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
+				status = " [Not Executed - file does not exist]"
+			} else {
+				status = " [Not Executed - file exists]"
+			}
 		} else if len(n.Entries) > 0 {
 			status = fmt.Sprintf(" [%d paths]", len(n.Entries))
 		} else {
@@ -987,11 +1101,61 @@ func GenerateReport(res model.AnalysisResult, verbose bool) string {
 		sb.WriteString(fmt.Sprintf("%2d. %s%s%s%s%s\n", n.Order, indent, n.FilePath, desc, status, execLabel))
 	}
 
+	// Add detailed view showing actual paths added by each node (verbose mode only)
 	if verbose {
-		sb.WriteString("\nINTERNAL MODEL (VERBOSE)\n")
-		sb.WriteString("-----------------------\n")
-		modelJson, _ := json.MarshalIndent(res, "", "  ")
-		sb.WriteString(string(modelJson))
+		sb.WriteString("\nCONFIGURATION FILES FLOW - DETAIL\n")
+		sb.WriteString("---------------------------------\n")
+		for _, n := range res.FlowNodes {
+			indent := strings.Repeat("  ", n.Depth)
+
+			// Build the header line
+			status := ""
+			if n.NotExecuted {
+				// Check if file exists
+				expandedPath := expandTilde(n.FilePath)
+				if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
+					status = " [Not Executed - file does not exist]"
+				} else {
+					status = " [Not Executed - file exists]"
+				}
+			} else if len(n.Entries) > 0 {
+				status = fmt.Sprintf(" [%d paths]", len(n.Entries))
+			} else {
+				status = " [no change]"
+			}
+			desc := ""
+			if n.Description != "" {
+				desc = " " + n.Description
+			}
+			execLabel := ""
+			if n.Order == 1 {
+				execLabel = " (executed first " + model.IconFirst + ")"
+			} else if n.Order == len(res.FlowNodes) {
+				execLabel = " (executed last " + model.IconLast + ")"
+			}
+
+			sb.WriteString(fmt.Sprintf("%2d. %s%s%s%s%s\n", n.Order, indent, n.FilePath, desc, status, execLabel))
+
+			// List the actual paths added by this node
+			if len(n.Entries) > 0 && !n.NotExecuted {
+				// Path entries should be indented more than the flow node itself
+				// Base indent is 6 spaces (to align after "    ") plus the node's depth-based indent
+				pathIndent := "      " + indent
+
+				for _, entryIdx := range n.Entries {
+					if entryIdx < len(res.PathEntries) {
+						entry := res.PathEntries[entryIdx]
+						marker := ""
+						if entry.IsDuplicate {
+							marker = " " + model.IconDuplicate
+						} else if entry.IsSessionOnly {
+							marker = " " + model.IconSession
+						}
+						sb.WriteString(fmt.Sprintf("%s» %s%s\n", pathIndent, entry.Value, marker))
+					}
+				}
+			}
+		}
 	}
 
 	return sb.String()
@@ -1240,7 +1404,7 @@ func getPathCategory(path string) string {
 }
 
 func getDirStats(path string) string {
-	info, err := os.Stat(path)
+	_, err := os.Stat(path)
 	if err != nil {
 		return "unknown"
 	}
@@ -1274,7 +1438,5 @@ func getDirStats(path string) string {
 		}
 	}
 
-	mode := info.Mode().String()
-	mtime := info.ModTime().Format("2006-01-02 15:04")
-	return fmt.Sprintf("%d files, %d dirs (Perms: %s, Mod: %s)", fileCount, dirCount, mode, mtime)
+	return fmt.Sprintf("%d files, %d dirs", fileCount, dirCount)
 }
