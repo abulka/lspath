@@ -620,6 +620,21 @@ func (m *AppModel) loadSelectedFile() {
 	node := m.TraceResult.FlowNodes[m.FlowSelectedIdx]
 	path := node.FilePath
 
+	// Handle special non-file nodes
+	if path == "Session (Manual/Runtime)" {
+		m.PreviewContent = "Session paths ◆ are added manually or by runtime\ntools, not from shell configuration files.\n\nThese paths exist only in the current shell session\nand will not persist after the shell is closed unless\nadded to a configuration file."
+		m.PreviewPath = path
+		m.PreviewScrollY = 0
+		return
+	}
+
+	if path == "System (Default)" {
+		m.PreviewContent = "System default paths are inherited from system-wide\nconfiguration:\n\n• /etc/paths\n• /etc/paths.d/*\n• Built-in shell defaults\n\nThis is normal and expected behavior on Unix-like\nsystems. These paths are set before any user\nconfiguration files are processed."
+		m.PreviewPath = path
+		m.PreviewScrollY = 0
+		return
+	}
+
 	// Expand ~
 	if strings.HasPrefix(path, "~") {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -634,6 +649,21 @@ func (m *AppModel) loadSelectedFile() {
 		m.PreviewScrollY = savedScroll
 	} else {
 		m.PreviewScrollY = 0 // Reset scroll for new files
+	}
+
+	// Check if file was not executed (placeholder node)
+	if node.NotExecuted {
+		// Check if file exists
+		if _, err := os.Stat(path); err != nil {
+			if os.IsNotExist(err) {
+				m.PreviewContent = fmt.Sprintf("File not executed during this shell session.\n\nFile does not exist:\n%s", path)
+			} else {
+				m.PreviewContent = fmt.Sprintf("File not executed during this shell session.\n\nCannot access file:\n%v", err)
+			}
+		} else {
+			m.PreviewContent = fmt.Sprintf("File not executed during this shell session.\n\nFile exists at:\n%s", path)
+		}
+		return
 	}
 
 	content, err := os.ReadFile(path)

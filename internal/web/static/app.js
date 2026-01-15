@@ -441,31 +441,88 @@ async function renderDetails() {
             </div>
     `;
 
-    // Fetch and display the source line context
-    if (entry.SourceFile !== 'System (Default)' || entry.LineNumber !== 0) {
+    // Always show source context section (educational for System defaults)
+    if (entry.SourceFile === 'System (Default)' && entry.LineNumber === 0) {
+        // Educational message for system default paths
+        html += `
+            <div class="detail-row" style="margin-top: 8px;">
+                <div class="detail-label">Source Line Context</div>
+                <div class="detail-value">
+                    <div style="background: var(--bg-color); border: 1px solid var(--border); padding: 12px; border-radius: 6px; font-size: 0.9em; line-height: 1.6; color: var(--text-muted);">
+                        <p style="margin: 0 0 8px 0;">This PATH entry comes from the <strong style="color: var(--text-color);">system default configuration</strong>, typically inherited from:</p>
+                        <ul style="margin: 8px 0 8px 20px; padding: 0;">
+                            <li style="margin: 4px 0;"><code style="color: var(--accent-bright);">/etc/paths</code> - System-wide PATH entries</li>
+                            <li style="margin: 4px 0;"><code style="color: var(--accent-bright);">/etc/paths.d/*</code> - Additional system paths</li>
+                            <li style="margin: 4px 0;">Built-in shell defaults</li>
+                        </ul>
+                        <p style="margin: 8px 0 0 0; font-size: 0.85em; font-style: italic;">This is normal and expected behavior on Unix-like systems. These paths are set before any user configuration files are processed.</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else {
+        // Fetch and display the source line context for actual files
         try {
             const lineResp = await fetch(`/api/line-context?path=${encodeURIComponent(entry.SourceFile)}&line=${entry.LineNumber}`);
             if (lineResp.ok) {
                 const lineContext = await lineResp.json();
                 if (!lineContext.ErrorMsg) {
+                    // Detect if/fi blocks and adjust which line to highlight
+                    let highlightLineNum = lineContext.LineNumber;
+                    const targetTrimmed = lineContext.Target.trim();
+                    
+                    if (targetTrimmed === 'fi') {
+                        // Target is 'fi', look for corresponding 'if' and highlight content inside
+                        if (lineContext.HasBefore2 && lineContext.Before2.trim().startsWith('if ')) {
+                            // 'if' is 2 lines before, highlight the line in between (Before1)
+                            highlightLineNum = lineContext.LineNumber - 1;
+                        } else if (lineContext.HasBefore1 && lineContext.Before1.trim().startsWith('if ')) {
+                            // 'if' is 1 line before (adjacent), highlight the 'if' line
+                            highlightLineNum = lineContext.LineNumber - 1;
+                        }
+                    }
+                    
                     html += `
                         <div class="detail-row" style="margin-top: 8px;">
-                            <div class="detail-label">Source Line Context (${entry.SourceFile})</div>
+                            <div class="detail-label">Source Line Context</div>
                             <div class="detail-value">
-                                <div style="background: var(--bg-secondary); padding: 6px 8px; border-radius: 4px; font-family: monospace; font-size: 0.9em; line-height: 1.4; overflow-x: auto;">
+                                <div style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 6px;">
+                                    Filename: <span style="color: var(--text-color); font-family: monospace;">${entry.SourceFile}</span>
+                                </div>
+                                <div style="background: var(--bg-color); border: 1px solid var(--border); padding: 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.85em; line-height: 1.6; overflow-x: auto;">
                     `;
                     if (lineContext.HasBefore2) {
-                        html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber - 2).padStart(2, ' ')}  ${escapeHtml(lineContext.Before2)}</div>`;
+                        const isHighlight = (lineContext.LineNumber - 2) === highlightLineNum;
+                        const style = isHighlight 
+                            ? 'color: var(--accent-bright); font-weight: bold; background: rgba(122, 162, 247, 0.1); margin: 0 -12px; padding: 0 12px;'
+                            : 'color: var(--text-muted);';
+                        html += `<div style="${style}"> ${String(lineContext.LineNumber - 2).padStart(3, ' ')}  ${escapeHtml(lineContext.Before2)}</div>`;
                     }
                     if (lineContext.HasBefore1) {
-                        html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber - 1).padStart(2, ' ')}  ${escapeHtml(lineContext.Before1)}</div>`;
+                        const isHighlight = (lineContext.LineNumber - 1) === highlightLineNum;
+                        const style = isHighlight 
+                            ? 'color: var(--accent-bright); font-weight: bold; background: rgba(122, 162, 247, 0.1); margin: 0 -12px; padding: 0 12px;'
+                            : 'color: var(--text-muted);';
+                        html += `<div style="${style}"> ${String(lineContext.LineNumber - 1).padStart(3, ' ')}  ${escapeHtml(lineContext.Before1)}</div>`;
                     }
-                    html += `<div style="color: var(--accent); font-weight: bold;"> ${String(lineContext.LineNumber).padStart(2, ' ')}  ${escapeHtml(lineContext.Target)}</div>`;
+                    const isTargetHighlight = lineContext.LineNumber === highlightLineNum;
+                    const targetStyle = isTargetHighlight
+                        ? 'color: var(--accent-bright); font-weight: bold; background: rgba(122, 162, 247, 0.1); margin: 0 -12px; padding: 0 12px;'
+                        : 'color: var(--text-muted);';
+                    html += `<div style="${targetStyle}"> ${String(lineContext.LineNumber).padStart(3, ' ')}  ${escapeHtml(lineContext.Target)}</div>`;
                     if (lineContext.HasAfter1) {
-                        html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber + 1).padStart(2, ' ')}  ${escapeHtml(lineContext.After1)}</div>`;
+                        const isHighlight = (lineContext.LineNumber + 1) === highlightLineNum;
+                        const style = isHighlight 
+                            ? 'color: var(--accent-bright); font-weight: bold; background: rgba(122, 162, 247, 0.1); margin: 0 -12px; padding: 0 12px;'
+                            : 'color: var(--text-muted);';
+                        html += `<div style="${style}"> ${String(lineContext.LineNumber + 1).padStart(3, ' ')}  ${escapeHtml(lineContext.After1)}</div>`;
                     }
                     if (lineContext.HasAfter2) {
-                        html += `<div style="color: var(--text-muted);"> ${String(lineContext.LineNumber + 2).padStart(2, ' ')}  ${escapeHtml(lineContext.After2)}</div>`;
+                        const isHighlight = (lineContext.LineNumber + 2) === highlightLineNum;
+                        const style = isHighlight 
+                            ? 'color: var(--accent-bright); font-weight: bold; background: rgba(122, 162, 247, 0.1); margin: 0 -12px; padding: 0 12px;'
+                            : 'color: var(--text-muted);';
+                        html += `<div style="${style}"> ${String(lineContext.LineNumber + 2).padStart(3, ' ')}  ${escapeHtml(lineContext.After2)}</div>`;
                     }
                     html += `
                                 </div>
@@ -505,12 +562,23 @@ async function renderDetails() {
     lsContainer.innerHTML = '<p style="color:var(--text-muted); padding:20px;">Loading directory listing...</p>';
     try {
         const resp = await fetch(`/api/ls?path=${encodeURIComponent(entry.Value)}`);
-        if (!resp.ok) throw new Error("Could not load directory listing");
+        if (!resp.ok) {
+            // Distinguish between non-existent and unreadable directories
+            if (resp.status === 404 || resp.status === 500) {
+                // Both 404 and 500 often indicate non-existent directory
+                lsContainer.innerHTML = `<p style="color:var(--text-muted); padding:20px; font-style: italic;">Directory does not exist:<br><br><code>${entry.Value}</code></p>`;
+            } else if (resp.status === 403) {
+                lsContainer.innerHTML = `<p style="color:var(--warning); padding:20px;">⚠️ Permission denied: Cannot read directory <code>${entry.Value}</code></p>`;
+            } else {
+                lsContainer.innerHTML = `<p style="color:var(--warning); padding:20px;">⚠️ Cannot access directory (HTTP ${resp.status})</p>`;
+            }
+            return;
+        }
         const files = await resp.json();
         state.currentLs = files;
         renderLsTable(files);
     } catch (e) {
-        lsContainer.innerHTML = `<p style="color:var(--warning); padding:20px;">Error: ${e.message}</p>`;
+        lsContainer.innerHTML = `<p style="color:var(--warning); padding:20px;">⚠️ Error: ${e.message}</p>`;
     }
 }
 
@@ -518,14 +586,20 @@ function renderLsTable(files) {
     const container = document.getElementById('directory-listing-container');
     if (!container) return;
 
+    // Handle null, undefined, or empty directory
+    if (!files || files.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted); padding:20px; font-style: italic;">Directory is empty</p>';
+        return;
+    }
+
     let html = `
         <table class="listing-table">
             <thead>
                 <tr>
-                    <th>Mode</th>
-                    <th>Size</th>
-                    <th>Modified</th>
-                    <th>Name</th>
+                    <th class="col-permissions">Mode</th>
+                    <th class="col-size">Size</th>
+                    <th class="col-date">Modified</th>
+                    <th class="col-name">Name</th>
                 </tr>
             </thead>
             <tbody>
@@ -536,10 +610,10 @@ function renderLsTable(files) {
         const nameClass = f.IsDir ? 'listing-dir' : 'listing-name';
         html += `
             <tr>
-                <td style="color:var(--text-muted)">${f.Mode}</td>
-                <td style="text-align:right">${sizeStr}</td>
-                <td>${f.ModTime}</td>
-                <td class="${nameClass}">${f.IsDir ? '📁' : '📄'} ${f.Name}</td>
+                <td class="col-permissions">${f.Mode}</td>
+                <td class="col-size">${sizeStr}</td>
+                <td class="col-date">${f.ModTime}</td>
+                <td class="col-name ${nameClass}">${f.IsDir ? '📁' : '📄'} ${f.Name}</td>
             </tr>
         `;
     });
@@ -589,9 +663,15 @@ function renderFlowNodes() {
         const div = document.createElement('div');
         div.className = 'flow-node' + (idx === state.flowNodeIndex ? ' active' : '');
         
-        let nodeText = node.FilePath.split('/').pop();
-        if (idx === 0) nodeText += ' ' + Icons.First;
-        if (idx === state.data.FlowNodes.length - 1) nodeText += ' ' + Icons.Last;
+        // Clean up session node display - check BEFORE splitting
+        let nodeText;
+        if (node.FilePath === 'Session (Manual/Runtime)') {
+            nodeText = 'Session ' + Icons.Session;
+        } else {
+            nodeText = node.FilePath.split('/').pop();
+        }
+        
+        // Don't add first/last symbols in web view - position is obvious from GUI
         
         div.textContent = nodeText;
         div.title = node.FilePath;
@@ -652,15 +732,58 @@ function renderFlowPathList() {
 }
 
 async function renderFilePreview() {
-    const node = state.data.FlowNodes[state.flowNodeIndex];
-    if (!node) return;
     const preview = document.getElementById('file-preview');
     const filenameLabel = document.getElementById('preview-filename');
 
+    // Handle Shell Start node (index -1)
+    if (state.flowNodeIndex === -1) {
+        preview.classList.remove('file-content');
+        filenameLabel.textContent = '🚀 Shell Start';
+        preview.innerHTML = '<div style="color:var(--text-muted); padding:20px; line-height:1.6;"><p style="margin:0 0 12px 0;"><strong style="color:var(--text-color);">Shell initialization begins here.</strong></p><p style="margin:0;">At this point, no PATH entries have been loaded yet. The shell will begin reading configuration files based on its startup mode (login/interactive).</p></div>';
+        return;
+    }
+
+    // Handle Shell Ready node (index === FlowNodes.length)
+    if (state.flowNodeIndex === state.data.FlowNodes.length) {
+        preview.classList.remove('file-content');
+        filenameLabel.textContent = '🏁 Shell Ready';
+        preview.innerHTML = '<div style="color:var(--text-muted); padding:20px; line-height:1.6;"><p style="margin:0 0 12px 0;"><strong style="color:var(--text-color);">Shell initialization complete.</strong></p><p style="margin:0;">All configuration files have been processed and the PATH is now fully constructed. The shell is ready for use.</p></div>';
+        return;
+    }
+
+    const node = state.data.FlowNodes[state.flowNodeIndex];
+    if (!node) return;
+
     filenameLabel.textContent = node.FilePath;
 
+    // Handle special non-file nodes
+    if (node.FilePath === 'Session (Manual/Runtime)') {
+        preview.classList.remove('file-content');
+        preview.innerHTML = '<div style="color:var(--text-muted); padding:20px; line-height:1.6;"><p style="margin:0 0 12px 0;"><strong style="color:var(--text-color);">Session paths ' + Icons.Session + '</strong> are added manually or by runtime tools, not from shell configuration files.</p><p style="margin:0;">These paths exist only in the current shell session and will not persist after the shell is closed unless added to a configuration file.</p></div>';
+        return;
+    }
+    
+    if (node.FilePath === 'System (Default)') {
+        preview.classList.remove('file-content');
+        preview.innerHTML = '<div style="color:var(--text-muted); padding:20px; line-height:1.6;"><p style="margin:0 0 12px 0;"><strong style="color:var(--text-color);">System default paths</strong> are inherited from system-wide configuration:</p><ul style="margin:8px 0 0 20px; padding:0;"><li style="margin:4px 0;"><code style="color:var(--accent-bright);">/etc/paths</code></li><li style="margin:4px 0;"><code style="color:var(--accent-bright);">/etc/paths.d/*</code></li><li style="margin:4px 0;">Built-in shell defaults</li></ul></div>';
+        return;
+    }
+
     if (node.NotExecuted) {
-        preview.textContent = "(File not executed during this shell session)";
+        preview.classList.remove('file-content');
+        // Check if file exists by trying to fetch it
+        try {
+            const resp = await fetch(`/api/file?path=${encodeURIComponent(node.FilePath)}`);
+            if (resp.ok) {
+                preview.innerHTML = '<div style="color:var(--text-muted); padding:20px; line-height:1.6;"><p style="margin:0 0 12px 0;"><strong style="color:var(--text-color);">File not executed during this shell session.</strong></p><p style="margin:0;">File exists at: <code style="color:var(--accent-bright);">' + node.FilePath + '</code></p></div>';
+            } else if (resp.status === 404) {
+                preview.innerHTML = '<div style="color:var(--text-muted); padding:20px; line-height:1.6;"><p style="margin:0 0 12px 0;"><strong style="color:var(--text-color);">File not executed during this shell session.</strong></p><p style="margin:0;">File does not exist: <code style="color:var(--warning);">' + node.FilePath + '</code></p></div>';
+            } else {
+                preview.innerHTML = '<div style="color:var(--text-muted); padding:20px; line-height:1.6;"><p style="margin:0 0 12px 0;"><strong style="color:var(--text-color);">File not executed during this shell session.</strong></p><p style="margin:0;">Cannot access file (HTTP ' + resp.status + ')</p></div>';
+            }
+        } catch (e) {
+            preview.innerHTML = '<div style="color:var(--text-muted); padding:20px; line-height:1.6;"><p style="margin:0 0 12px 0;"><strong style="color:var(--text-color);">File not executed during this shell session.</strong></p><p style="margin:0;">Error checking file: ' + e.message + '</p></div>';
+        }
         return;
     }
 
@@ -682,6 +805,7 @@ async function renderFilePreview() {
 
 function applyPreview(text) {
     const preview = document.getElementById('file-preview');
+    preview.classList.add('file-content');
     preview.innerHTML = '';
 
     const lines = text.split('\n');

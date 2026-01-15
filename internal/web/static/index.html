@@ -121,6 +121,8 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
+            container-type: inline-size;
+            container-name: details;
         }
 
         #details-header h1 {
@@ -318,6 +320,10 @@
             transition: all 0.2s;
             flex-shrink: 0;
             color: var(--text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 200px;
         }
 
         .flow-node.start-node {
@@ -414,7 +420,13 @@
             font-size: 0.85em;
             /* Slightly smaller for density */
             line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        #file-preview.file-content {
             white-space: pre;
+            word-wrap: normal;
         }
 
         .highlight-line {
@@ -430,6 +442,7 @@
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.85em;
             margin-top: 20px;
+            table-layout: fixed; /* Enable fixed layout for better column control */
         }
 
         .listing-table th {
@@ -437,11 +450,65 @@
             color: var(--text-muted);
             border-bottom: 1px solid var(--border);
             padding: 8px 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .listing-table td {
             padding: 6px 10px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Column-specific styling */
+        .listing-table .col-permissions {
+            width: 90px;
+            color: var(--text-muted);
+        }
+
+        .listing-table .col-size {
+            width: 60px;
+            text-align: right;
+        }
+
+        .listing-table .col-date {
+            width: 110px;
+        }
+
+        .listing-table .col-name {
+            /* Name column takes remaining space */
+            width: auto;
+        }
+
+        /* Responsive column hiding for narrow panels */
+        /* Hide permissions when container is narrow */
+        @container (max-width: 600px) {
+            .listing-table .col-permissions {
+                display: none;
+            }
+        }
+
+        /* Hide dates when container is very narrow */
+        @container (max-width: 400px) {
+            .listing-table .col-date {
+                display: none;
+            }
+        }
+
+        /* Fallback media queries for browsers without container query support */
+        @media (max-width: 1000px) {
+            .listing-table .col-permissions {
+                display: none;
+            }
+        }
+
+        @media (max-width: 700px) {
+            .listing-table .col-date {
+                display: none;
+            }
         }
 
         .listing-name {
