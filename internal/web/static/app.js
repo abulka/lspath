@@ -796,13 +796,3 @@ async function performWhichSearch() {
     }
 }
 
-function clearSearch() {
-    state.mainFilteredIndices = state.data.PathEntries.map((_, i) => i);
-    state.whichMatches = [];
-    state.searchTerm = '';
-    const input = document.getElementById('search-input');
-    if (input) input.value = '';
-    const clearBtn = document.getElementById('clear-search');
-    if (clearBtn) clearBtn.style.display = 'none';
-    renderAll();
-}
